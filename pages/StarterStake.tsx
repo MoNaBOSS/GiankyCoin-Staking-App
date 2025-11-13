@@ -176,10 +176,10 @@ const maxval = 1000000;
                                 <h2>Your Unstaked {PAGE_NAME} NFTs</h2>
                                 <div className={styles.nftBoxGrid}>
                                     {/* This code filters the user's wallet to only show NFTs in this pool's ID range */}
-                                    {ownedNfts?.filter(nft => 
-                                        nft.metadata.id.toNumber() >= minvalue && 
-                                        nft.metadata.id.toNumber() <= maxval
-                                    ).map((nft) => (
+{ownedNfts?.filter(nft => 
+    Number(nft.metadata.id) >= minvalue && 
+    Number(nft.metadata.id) <= maxval
+).map((nft) => (
                                         <div className={styles.nftBox} key={nft.metadata.id.toString()}>
                                             <ThirdwebNftMedia
                                                 metadata={nft.metadata}
