@@ -1,13 +1,3 @@
-/* General Body Styles */
-body {
-  background-color: #0f0f15; /* Darker, sophisticated background */
-  color: #e0e0e0;            /* Softer white for better readability */
-  font-family: 'Inter', sans-serif; /* A more modern, clean font */
-  margin: 0;
-  padding: 0;
-  line-height: 1.6;
-}
-
 /* --- Main Layout & Container --- */
 .container {
   width: 100%;
@@ -19,23 +9,15 @@ body {
   gap: 3rem;          /* Larger gaps between sections */
 }
 
-/* Headings */
-h1, h2, h3 {
-  font-family: 'Montserrat', sans-serif; /* A strong, elegant heading font */
-  color: #f0f0f0;
-  margin-top: 0;
-  margin-bottom: 1rem;
-}
-
-h1 {
+/* --- Headings (as classes) --- */
+.h1 {
   font-size: 3.5rem; /* Larger, more impactful main heading */
   text-align: center;
   font-weight: 700;
   letter-spacing: -0.05em;
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.05); /* Subtle glow */
 }
-
-h2 {
+.h2 {
   font-size: 2.2rem;
   font-weight: 600;
   color: #c0c0c0;
@@ -119,59 +101,16 @@ h2 {
   border: 1px solid #3a3a4a; /* A thin border around the media */
 }
 
-/* --- Input Fields --- */
-input[type="text"] {
-  width: 100%;
-  padding: 0.8rem 1.2rem;
-  border: 1px solid #3a3a4a;
-  border-radius: 8px;
-  background-color: #2a2a3a; /* Darker input background */
-  color: #e0e0e0;
-  font-size: 1rem;
-  box-sizing: border-box; /* Include padding in width */
-  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
-input[type="text"]:focus {
-  border-color: #6a5acd; /* Royal purple on focus */
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(106, 92, 205, 0.3); /* Soft focus glow */
-}
-
-/* --- Buttons --- */
-button {
-  background-color: #6a5acd; /* Royal purple for primary actions */
-  color: white;
-  padding: 1rem 1.5rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 1.1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
-  box-shadow: 0 4px 15px rgba(106, 92, 205, 0.4); /* Matching button shadow */
-}
-button:hover {
-  background-color: #7b68ee; /* Lighter purple on hover */
-  transform: translateY(-2px); /* Subtle lift */
-  box-shadow: 0 6px 20px rgba(106, 92, 205, 0.6);
-}
-button:disabled {
-  background-color: #4a4a5a;
-  cursor: not-allowed;
-  box-shadow: none;
-  transform: none;
-}
-
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .container {
     padding: 1.5rem;
     gap: 2rem;
   }
-  h1 {
+  .h1 {
     font-size: 2.5rem;
   }
-  h2 {
+  .h2 {
     font-size: 1.8rem;
   }
   .tokenGrid {
