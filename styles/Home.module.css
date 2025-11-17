@@ -1,75 +1,183 @@
+/* General Body Styles */
+body {
+  background-color: #0f0f15; /* Darker, sophisticated background */
+  color: #e0e0e0;            /* Softer white for better readability */
+  font-family: 'Inter', sans-serif; /* A more modern, clean font */
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
+}
+
 /* --- Main Layout & Container --- */
 .container {
   width: 100%;
-  max-width: 1200px; /* Set a max width for the content */
-  margin: 0 auto;     /* Center the content on the page */
-  padding: 2rem;
+  max-width: 1400px; /* Wider content area for a more expansive feel */
+  margin: 0 auto;     /* Center the content */
+  padding: 3rem;      /* Increased padding for more breathing room */
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 3rem;          /* Larger gaps between sections */
+}
+
+/* Headings */
+h1, h2, h3 {
+  font-family: 'Montserrat', sans-serif; /* A strong, elegant heading font */
+  color: #f0f0f0;
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+h1 {
+  font-size: 3.5rem; /* Larger, more impactful main heading */
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.05); /* Subtle glow */
+}
+
+h2 {
+  font-size: 2.2rem;
+  font-weight: 600;
+  color: #c0c0c0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1); /* Subtle separator */
+  padding-bottom: 0.8rem;
+  margin-top: 2rem;
 }
 
 /* --- Section Dividers --- */
 .divider {
   border: 0;
-  border-top: 1px solid #333;
-  margin: 1rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1); /* Thinner, softer divider */
+  margin: 2rem 0;
 }
 .spacerTop {
-  margin-top: 2rem;
+  margin-top: 3rem; /* More space above sections */
 }
 
 /* --- Token/Reward Section --- */
 .tokenGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); /* More flexible grid */
+  gap: 2rem; /* Increased gap */
 }
 .tokenItem {
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 1.5rem;
+  background: #1a1a24; /* Slightly darker item background */
+  border: 1px solid #2a2a3a; /* More pronounced border */
+  border-radius: 12px; /* Softer rounded corners */
+  padding: 2rem;
   text-align: center;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4); /* Deeper, softer shadow */
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+.tokenItem:hover {
+  transform: translateY(-5px); /* Subtle lift on hover */
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
 }
 .tokenLabel {
-  font-size: 1.1rem;
-  color: #aaa;
+  font-size: 1.2rem;
+  color: #909090; /* Darker grey for label */
   margin-top: 0;
+  font-weight: 500;
 }
 .tokenValue {
-  font-size: 2rem;
-  font-weight: bold;
+  font-size: 2.8rem; /* Larger value */
+  font-weight: 700;
+  color: #f0f0f0; /* Brighter value */
   margin-bottom: 0;
+  letter-spacing: -0.03em;
 }
 
 /* --- NFT Grid Section --- */
 .nftBoxGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); /* Responsive grid */
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); /* Slightly larger min-width for NFTs */
+  gap: 2rem; /* Increased gap */
 }
 
 .nftBox {
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 8px;
+  background: #1a1a24; /* Consistent item background */
+  border: 1px solid #2a2a3a;
+  border-radius: 12px; /* Consistent rounded corners */
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4); /* Consistent shadow */
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+.nftBox:hover {
+  transform: translateY(-5px); /* Subtle lift on hover */
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
 }
 
 .nftMedia {
   width: 100%;
   height: auto;
-  border-radius: 8px;
+  border-radius: 8px; /* Softer corners for media */
   aspect-ratio: 1 / 1;
   object-fit: cover;
+  border: 1px solid #3a3a4a; /* A thin border around the media */
 }
 
-/* --- Other --- */
-.h1 {
-  font-size: 2.5rem;
-  text-align: center;
+/* --- Input Fields --- */
+input[type="text"] {
+  width: 100%;
+  padding: 0.8rem 1.2rem;
+  border: 1px solid #3a3a4a;
+  border-radius: 8px;
+  background-color: #2a2a3a; /* Darker input background */
+  color: #e0e0e0;
+  font-size: 1rem;
+  box-sizing: border-box; /* Include padding in width */
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+input[type="text"]:focus {
+  border-color: #6a5acd; /* Royal purple on focus */
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(106, 92, 205, 0.3); /* Soft focus glow */
+}
+
+/* --- Buttons --- */
+button {
+  background-color: #6a5acd; /* Royal purple for primary actions */
+  color: white;
+  padding: 1rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+  box-shadow: 0 4px 15px rgba(106, 92, 205, 0.4); /* Matching button shadow */
+}
+button:hover {
+  background-color: #7b68ee; /* Lighter purple on hover */
+  transform: translateY(-2px); /* Subtle lift */
+  box-shadow: 0 6px 20px rgba(106, 92, 205, 0.6);
+}
+button:disabled {
+  background-color: #4a4a5a;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .container {
+    padding: 1.5rem;
+    gap: 2rem;
+  }
+  h1 {
+    font-size: 2.5rem;
+  }
+  h2 {
+    font-size: 1.8rem;
+  }
+  .tokenGrid {
+    grid-template-columns: 1fr;
+  }
+  .nftBoxGrid {
+    grid-template-columns: 1fr;
+  }
 }
