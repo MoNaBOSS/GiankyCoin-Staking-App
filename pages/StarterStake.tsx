@@ -9,7 +9,6 @@ import { STAKING_POOL_ABI, REFERRAL_MANAGER_ABI } from "../constants/abis";
 import styles from "../styles/Home.module.css";
 
 const PAGE_NAME = "Starter";
-// NOTE: I removed "nft-drop" to force Thirdweb to detect the contract type automatically
 const nftDropContractAddress = "0x106fb804D03D4EA95CaeFA45C3215b57D8E6835D";
 const stakingContractAddress = "0x76Ca881a2455441869fC35ec1B54997A8252F59C";
 const referralManagerAddress = "0xF6EeC70971B7769Db3a7F3daffCF8F00AfeF47b9";
@@ -17,7 +16,7 @@ const tokenContractAddress = "0x64487539aa9d61Bdc652A5755bbe30Ee96cFcEb2";
 const minvalue = 1;
 const maxval = 1000000;
 
-// --- Helper Components ---
+// Helper Component
 const NftCard = ({ tokenId }: { tokenId: number }) => {
     const { contract } = useContract(nftDropContractAddress);
     const { data: nft } = useNFT(contract, tokenId);
@@ -26,6 +25,7 @@ const NftCard = ({ tokenId }: { tokenId: number }) => {
         <div className={styles.nftBox}>
             <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} />
             <h3>{nft.metadata.name}</h3>
+            <p>ID: {nft.metadata.id}</p> {/* SHOW ID ON SCREEN */}
             <Web3Button
                 contractAddress={stakingContractAddress}
                 contractAbi={STAKING_POOL_ABI}
@@ -63,52 +63,57 @@ const Stake: NextPage = () => {
 
     const [ownedIds, setOwnedIds] = useState<number[]>([]);
     const [loadingNfts, setLoadingNfts] = useState(false);
-    const [debugLog, setDebugLog] = useState<string>("Initializing..."); // ON-SCREEN DEBUGGER
+    
+    // --- SUPER DEBUGGER STATE ---
+    const [statusLog, setStatusLog] = useState<string>("Waiting...");
+    const [foundLog, setFoundLog] = useState<string>("");
 
     useEffect(() => {
-        if (!address) {
-            setDebugLog("Wallet not connected.");
-            return;
-        }
-        if (!nftDropContract) {
-            setDebugLog("Waiting for NFT Contract connection...");
+        if (!address || !nftDropContract) {
+            setStatusLog("Connecting to wallet/contract...");
             return;
         }
 
         const fetchNfts = async () => {
             setLoadingNfts(true);
-            setDebugLog("Starting Scan...");
+            setStatusLog("Step 1: Checking Balance...");
             try {
-                // 1. Get Balance
-                console.log("Asking for balance...");
+                // 1. Check Balance
                 const balanceBN = await nftDropContract.call("balanceOf", [address]);
                 const balance = Number(balanceBN);
-                console.log("User owns:", balance);
-                setDebugLog(`User owns ${balance} NFTs. Scanning IDs...`);
+                
+                setStatusLog(`Step 2: Balance is ${balance}. Scanning IDs...`);
 
                 const foundIds = [];
-                // 2. Loop through IDs
+                let logString = "";
+
+                // 2. Loop
                 for (let i = 0; i < balance; i++) {
                     try {
-                        console.log(`Checking index ${i}...`);
-                        // This line is the likely failure point
                         const tokenId = await nftDropContract.call("tokenOfOwnerByIndex", [address, i]);
                         const idNum = Number(tokenId);
-                        console.log(`Found ID: ${idNum}`);
                         
+                        logString += `[#${idNum}] `; // Add to log
+                        
+                        // Filter
                         if (idNum >= minvalue && idNum <= maxval) {
                             foundIds.push(idNum);
                         }
-                    } catch (innerErr) {
-                        console.error(`Failed to read index ${i}`, innerErr);
-                        setDebugLog(`Error reading NFT at index ${i}. Contract might not support enumeration.`);
+                    } catch (err) {
+                        console.error(err);
                     }
                 }
+                
+                setFoundLog(logString || "No IDs returned.");
+                if (balance > 0 && foundIds.length === 0) {
+                    setStatusLog(`Finished. Found ${balance} NFTs but IDs didn't match range (${minvalue}-${maxval}).`);
+                } else {
+                    setStatusLog(`Finished. Showing ${foundIds.length} NFTs.`);
+                }
+                
                 setOwnedIds(foundIds);
-                setDebugLog(`Scan Complete. Found ${foundIds.length} valid NFTs.`);
             } catch (error) {
-                console.error("Critical Error scanning wallet:", error);
-                setDebugLog("CRITICAL ERROR: Could not read contract. Check Console.");
+                setStatusLog("CRITICAL ERROR: Contract call failed. " + error);
             }
             setLoadingNfts(false);
         };
@@ -121,10 +126,15 @@ const Stake: NextPage = () => {
             <div style={{display: 'flex', justifyContent: 'space-between'}}> <ConnectWallet /> </div>
             <h1 className={styles.h1}>Stake Your {PAGE_NAME} NFTs</h1>
             
-            {/* DEBUGGER BOX - SHOWS ERRORS ON SCREEN */}
-            <div style={{background: '#330000', color: '#ffaaaa', padding: '10px', borderRadius: '5px', marginBottom: '20px', fontFamily: 'monospace'}}>
-                <strong>DEBUG STATUS:</strong> {debugLog}
+            {/* --- RED DEBUG BOX --- */}
+            <div style={{background: '#330000', border: '1px solid red', padding: '15px', marginBottom: '20px'}}>
+                <h3 style={{color: 'red', margin: 0}}>DEBUGGER REPORT:</h3>
+                <p style={{color: '#ffcccc', margin: '5px 0'}}><strong>Status:</strong> {statusLog}</p>
+                <p style={{color: '#ffcccc', margin: '5px 0'}}><strong>All IDs in Wallet:</strong> {foundLog}</p>
+                <p style={{color: '#888', fontSize: '12px'}}>Wallet Connected: {address}</p>
+                <p style={{color: '#888', fontSize: '12px'}}>Checking Contract: {nftDropContractAddress}</p>
             </div>
+            {/* --------------------- */}
 
             <h2 className={styles.h2}>Your Unstaked {PAGE_NAME} NFTs</h2>
             <div className={styles.nftBoxGrid}>
@@ -135,15 +145,16 @@ const Stake: NextPage = () => {
                 )}
             </div>
             
+            {/* Other sections... */}
             <h2 className={styles.h2}>Your Staked {PAGE_NAME} NFTs</h2>
-            <div className={styles.nftBoxGrid}>
-                 {stisLoading ? <p>Loading...</p> : (
-                    stakedTokens && stakedTokens.length > 0 ? 
-                    stakedTokens.map((stakedToken: BigNumber) => (
-                        <StakedNftCard key={stakedToken.toString()} tokenId={stakedToken.toNumber()} />
-                    )) : <p>No NFTs staked.</p>
-                )}
-            </div>
+             {stisLoading ? <p>Loading...</p> : (
+                <div className={styles.nftBoxGrid}>
+                {stakedTokens && stakedTokens.length > 0 ? 
+                stakedTokens.map((stakedToken: BigNumber) => (
+                    <StakedNftCard key={stakedToken.toString()} tokenId={stakedToken.toNumber()} />
+                )) : <p>No NFTs staked.</p>}
+                </div>
+            )}
         </div>
     );
 };
