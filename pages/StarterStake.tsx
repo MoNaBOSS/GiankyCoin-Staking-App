@@ -26,7 +26,8 @@ const maxval = 1000000;
 
 // Helper Component for Unstaked NFT
 const NftCard = ({ tokenId }: { tokenId: number }) => {
-    const { contract } = useContract(nftDropContractAddress, "nft-drop");
+    // FIX 1: Removed "nft-drop" to allow auto-detection of ABI
+    const { contract } = useContract(nftDropContractAddress);
     const { data: nft } = useNFT(contract, tokenId);
 
     if (!nft) return null;
@@ -48,7 +49,8 @@ const NftCard = ({ tokenId }: { tokenId: number }) => {
 
 // Helper Component for Staked NFT
 const StakedNftCard = ({ tokenId }: { tokenId: number }) => {
-    const { contract } = useContract(nftDropContractAddress, "nft-drop");
+    // FIX 2: Removed "nft-drop" here too
+    const { contract } = useContract(nftDropContractAddress);
     const { data: nft } = useNFT(contract, tokenId);
 
     if (!nft) return null;
@@ -72,7 +74,8 @@ const Stake: NextPage = () => {
     const address = useAddress();
     
     // Contracts
-    const { contract: nftDropContract } = useContract(nftDropContractAddress, "nft-drop");
+    // FIX 3: Removed "nft-drop" here too
+    const { contract: nftDropContract } = useContract(nftDropContractAddress);
     const { contract: tokenContract } = useContract(tokenContractAddress, "token");
     const { contract: stakingContract } = useContract(stakingContractAddress, STAKING_POOL_ABI);
 
@@ -81,7 +84,7 @@ const Stake: NextPage = () => {
     const { data: claimableRewards } = useContractRead(stakingContract, "calculateRewards", [address]);
     const { data: stakedTokens, isLoading: stisLoading } = useContractRead(stakingContract, "getStakedTokenIds", [address]);
 
-    // --- MANUAL SCANNER LOGIC (Fixes the "0 NFTs" bug) ---
+    // --- MANUAL SCANNER LOGIC ---
     const [ownedIds, setOwnedIds] = useState<number[]>([]);
     const [loadingNfts, setLoadingNfts] = useState(false);
 
@@ -91,13 +94,18 @@ const Stake: NextPage = () => {
         const fetchNfts = async () => {
             setLoadingNfts(true);
             try {
+                // Get Balance
                 const balanceBN = await nftDropContract.call("balanceOf", [address]);
                 const balance = Number(balanceBN);
-                const foundIds = [];
+                
+                // Debug log (Check Console F12 if this prints)
+                console.log("User owns", balance, "NFTs");
 
+                const foundIds = [];
                 for (let i = 0; i < balance; i++) {
                     const tokenId = await nftDropContract.call("tokenOfOwnerByIndex", [address, i]);
                     const idNum = Number(tokenId);
+                    
                     // Filter specifically for this pool
                     if (idNum >= minvalue && idNum <= maxval) {
                         foundIds.push(idNum);
