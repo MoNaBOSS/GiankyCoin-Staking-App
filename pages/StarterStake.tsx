@@ -1,12 +1,6 @@
 import {
-    ConnectWallet,
-    ThirdwebNftMedia,
-    useAddress,
-    useContract,
-    useContractRead,
-    useTokenBalance,
-    Web3Button,
-    useNFT,
+    ConnectWallet, ThirdwebNftMedia, useAddress, useContract, 
+    useContractRead, useTokenBalance, Web3Button, useNFT
 } from "@thirdweb-dev/react";
 import { BigNumber, ethers } from "ethers";
 import type { NextPage } from "next";
@@ -14,24 +8,20 @@ import { useEffect, useState } from "react";
 import { STAKING_POOL_ABI, REFERRAL_MANAGER_ABI } from "../constants/abis";
 import styles from "../styles/Home.module.css";
 
-// --- CONFIGURATION FOR STARTER POOL ---
 const PAGE_NAME = "Starter";
+// NOTE: I removed "nft-drop" to force Thirdweb to detect the contract type automatically
 const nftDropContractAddress = "0x106fb804D03D4EA95CaeFA45C3215b57D8E6835D";
-const stakingContractAddress = "0x76Ca881a2455441869fC35ec1B54997A8252F59C"; 
+const stakingContractAddress = "0x76Ca881a2455441869fC35ec1B54997A8252F59C";
 const referralManagerAddress = "0xF6EeC70971B7769Db3a7F3daffCF8F00AfeF47b9";
 const tokenContractAddress = "0x64487539aa9d61Bdc652A5755bbe30Ee96cFcEb2";
 const minvalue = 1;
 const maxval = 1000000;
-// --------------------------------------
 
-// Helper Component for Unstaked NFT
+// --- Helper Components ---
 const NftCard = ({ tokenId }: { tokenId: number }) => {
-    // FIX 1: Removed "nft-drop" to allow auto-detection of ABI
     const { contract } = useContract(nftDropContractAddress);
     const { data: nft } = useNFT(contract, tokenId);
-
     if (!nft) return null;
-
     return (
         <div className={styles.nftBox}>
             <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} />
@@ -40,21 +30,15 @@ const NftCard = ({ tokenId }: { tokenId: number }) => {
                 contractAddress={stakingContractAddress}
                 contractAbi={STAKING_POOL_ABI}
                 action={(contract) => contract.call("stake", [[nft.metadata.id]])}
-            >
-                Stake
-            </Web3Button>
+            >Stake</Web3Button>
         </div>
     );
 };
 
-// Helper Component for Staked NFT
 const StakedNftCard = ({ tokenId }: { tokenId: number }) => {
-    // FIX 2: Removed "nft-drop" here too
     const { contract } = useContract(nftDropContractAddress);
     const { data: nft } = useNFT(contract, tokenId);
-
     if (!nft) return null;
-
     return (
         <div className={styles.nftBox}>
             <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} />
@@ -63,144 +47,101 @@ const StakedNftCard = ({ tokenId }: { tokenId: number }) => {
                 contractAddress={stakingContractAddress}
                 contractAbi={STAKING_POOL_ABI}
                 action={(contract) => contract.call("unstake", [[nft.metadata.id]])}
-            >
-                Unstake (Take)
-            </Web3Button>
+            >Unstake (Take)</Web3Button>
         </div>
     );
 };
 
 const Stake: NextPage = () => {
     const address = useAddress();
-    
-    // Contracts
-    // FIX 3: Removed "nft-drop" here too
     const { contract: nftDropContract } = useContract(nftDropContractAddress);
     const { contract: tokenContract } = useContract(tokenContractAddress, "token");
     const { contract: stakingContract } = useContract(stakingContractAddress, STAKING_POOL_ABI);
-
-    // Reads
     const { data: tokenBalance, isLoading: tisLoading } = useTokenBalance(tokenContract, address);
     const { data: claimableRewards } = useContractRead(stakingContract, "calculateRewards", [address]);
     const { data: stakedTokens, isLoading: stisLoading } = useContractRead(stakingContract, "getStakedTokenIds", [address]);
 
-    // --- MANUAL SCANNER LOGIC ---
     const [ownedIds, setOwnedIds] = useState<number[]>([]);
     const [loadingNfts, setLoadingNfts] = useState(false);
+    const [debugLog, setDebugLog] = useState<string>("Initializing..."); // ON-SCREEN DEBUGGER
 
     useEffect(() => {
-        if (!address || !nftDropContract) return;
+        if (!address) {
+            setDebugLog("Wallet not connected.");
+            return;
+        }
+        if (!nftDropContract) {
+            setDebugLog("Waiting for NFT Contract connection...");
+            return;
+        }
 
         const fetchNfts = async () => {
             setLoadingNfts(true);
+            setDebugLog("Starting Scan...");
             try {
-                // Get Balance
+                // 1. Get Balance
+                console.log("Asking for balance...");
                 const balanceBN = await nftDropContract.call("balanceOf", [address]);
                 const balance = Number(balanceBN);
-                
-                // Debug log (Check Console F12 if this prints)
-                console.log("User owns", balance, "NFTs");
+                console.log("User owns:", balance);
+                setDebugLog(`User owns ${balance} NFTs. Scanning IDs...`);
 
                 const foundIds = [];
+                // 2. Loop through IDs
                 for (let i = 0; i < balance; i++) {
-                    const tokenId = await nftDropContract.call("tokenOfOwnerByIndex", [address, i]);
-                    const idNum = Number(tokenId);
-                    
-                    // Filter specifically for this pool
-                    if (idNum >= minvalue && idNum <= maxval) {
-                        foundIds.push(idNum);
+                    try {
+                        console.log(`Checking index ${i}...`);
+                        // This line is the likely failure point
+                        const tokenId = await nftDropContract.call("tokenOfOwnerByIndex", [address, i]);
+                        const idNum = Number(tokenId);
+                        console.log(`Found ID: ${idNum}`);
+                        
+                        if (idNum >= minvalue && idNum <= maxval) {
+                            foundIds.push(idNum);
+                        }
+                    } catch (innerErr) {
+                        console.error(`Failed to read index ${i}`, innerErr);
+                        setDebugLog(`Error reading NFT at index ${i}. Contract might not support enumeration.`);
                     }
                 }
                 setOwnedIds(foundIds);
+                setDebugLog(`Scan Complete. Found ${foundIds.length} valid NFTs.`);
             } catch (error) {
-                console.error("Error scanning wallet:", error);
+                console.error("Critical Error scanning wallet:", error);
+                setDebugLog("CRITICAL ERROR: Could not read contract. Check Console.");
             }
             setLoadingNfts(false);
         };
 
         fetchNfts();
     }, [address, nftDropContract]);
-    // -----------------------------------------------------
 
     return (
-        <div className={address ? "stake loadingstake" : "stake loadingstake"}>
-            <div className={!address ? "stakeaa loadingstakea" : ""}>
-                {!address ? (
-                    <div className="connect"> <ConnectWallet /> </div>
-                ) : (
-                    <div className={styles.container}>
-                        <div className=""> <ConnectWallet /> </div>
-                        <h1 className={styles.h1}>Stake Your {PAGE_NAME} NFTs</h1>
-                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
+        <div className={styles.container}>
+            <div style={{display: 'flex', justifyContent: 'space-between'}}> <ConnectWallet /> </div>
+            <h1 className={styles.h1}>Stake Your {PAGE_NAME} NFTs</h1>
+            
+            {/* DEBUGGER BOX - SHOWS ERRORS ON SCREEN */}
+            <div style={{background: '#330000', color: '#ffaaaa', padding: '10px', borderRadius: '5px', marginBottom: '20px', fontFamily: 'monospace'}}>
+                <strong>DEBUG STATUS:</strong> {debugLog}
+            </div>
 
-                        {/* --- TOKENS SECTION --- */}
-                        <h2 className={styles.h2}>Your Tokens</h2>
-                        <div className={styles.tokenGrid}>
-                            <div className={styles.tokenItem}>
-                                <h3 className={styles.tokenLabel}>Claimable Rewards</h3>
-                                <p className={styles.tokenValue}>
-                                    <b>{claimableRewards ? ethers.utils.formatUnits(claimableRewards, 18) : "0.0"}</b> {tokenBalance?.symbol}
-                                </p>
-                            </div>
-                            <div className={styles.tokenItem}>
-                                <h3 className={styles.tokenLabel}>Current Balance</h3>
-                                <p className={styles.tokenValue}>
-                                    <b>{tisLoading ? "Loading..." : tokenBalance?.displayValue}</b> {tokenBalance?.symbol}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div style={{textAlign: 'center', marginTop: '20px'}}>
-                            <Web3Button
-                                contractAddress={stakingContractAddress}
-                                contractAbi={STAKING_POOL_ABI}
-                                action={(contract) => contract.call("claimReward")}
-                            >
-                                Claim Rewards
-                            </Web3Button>
-                        </div>
-
-                        {/* --- REFERRAL SECTION --- */}
-                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
-                        <h2 className={styles.h2}>Refer a Friend</h2>
-                        <div className={styles.tokenGrid}>
-                            <input type="text" placeholder="Friend's NFT ID" id="referral-id" />
-                            <Web3Button
-                                contractAddress={referralManagerAddress}
-                                contractAbi={REFERRAL_MANAGER_ABI}
-                                action={async (c) => {
-                                    const val = (document.getElementById("referral-id") as HTMLInputElement).value;
-                                    await c.call("register", [val]);
-                                }}
-                            >
-                                Register Referral
-                            </Web3Button>
-                        </div>
-
-                        {/* --- UNSTAKED NFTs (Manual Scanner) --- */}
-                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
-                        <h2 className={styles.h2}>Your Unstaked {PAGE_NAME} NFTs</h2>
-                        <div className={styles.nftBoxGrid}>
-                            {loadingNfts ? <p>Scanning wallet...</p> : (
-                                ownedIds.length > 0 ? ownedIds.map((id) => (
-                                    <NftCard key={id} tokenId={id} />
-                                )) : <p>No {PAGE_NAME} NFTs found in wallet.</p>
-                            )}
-                        </div>
-
-                        {/* --- STAKED NFTs --- */}
-                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
-                        <h2 className={styles.h2}>Your Staked {PAGE_NAME} NFTs</h2>
-                        {stisLoading ? "Loading..." : (
-                            <div className={styles.nftBoxGrid}>
-                                {stakedTokens && stakedTokens.length > 0 ? 
-                                    stakedTokens.map((stakedToken: BigNumber) => (
-                                        <StakedNftCard key={stakedToken.toString()} tokenId={stakedToken.toNumber()} />
-                                    )) : <p>No NFTs staked.</p>
-                                }
-                            </div>
-                        )}
-                    </div>
+            <h2 className={styles.h2}>Your Unstaked {PAGE_NAME} NFTs</h2>
+            <div className={styles.nftBoxGrid}>
+                {loadingNfts ? <p>Scanning wallet...</p> : (
+                    ownedIds.length > 0 ? ownedIds.map((id) => (
+                        <NftCard key={id} tokenId={id} />
+                    )) : <p>No {PAGE_NAME} NFTs found.</p>
+                )}
+            </div>
+            
+            <h2 className={styles.h2}>Your Staked {PAGE_NAME} NFTs</h2>
+            <div className={styles.nftBoxGrid}>
+                 {stisLoading ? <p>Loading...</p> : (
+                    stakedTokens && stakedTokens.length > 0 ? 
+                    stakedTokens.map((stakedToken: BigNumber) => (
+                        <StakedNftCard key={stakedToken.toString()} tokenId={stakedToken.toNumber()} />
+                    )) : <p>No NFTs staked.</p>
                 )}
             </div>
         </div>
