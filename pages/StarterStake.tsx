@@ -8,24 +8,22 @@ import { useEffect, useState } from "react";
 import { STAKING_POOL_ABI, REFERRAL_MANAGER_ABI } from "../constants/abis";
 import styles from "../styles/Home.module.css";
 
+// --- CONFIGURATION FOR STARTER POOL ---
 const PAGE_NAME = "Starter";
 const nftDropContractAddress = "0x106fb804D03D4EA95CaeFA45C3215b57D8E6835D";
-const stakingContractAddress = "0x76Ca881a2455441869fC35ec1B54997A8252F59C";
+const stakingContractAddress = "0x76Ca881a2455441869fC35ec1B54997A8252F59C"; 
 const referralManagerAddress = "0xF6EeC70971B7769Db3a7F3daffCF8F00AfeF47b9";
 const tokenContractAddress = "0x64487539aa9d61Bdc652A5755bbe30Ee96cFcEb2";
 const minvalue = 1;
 const maxval = 1000000;
+// --------------------------------------
 
-// Helper Component
-const NftCard = ({ tokenId }: { tokenId: number }) => {
-    const { contract } = useContract(nftDropContractAddress);
-    const { data: nft } = useNFT(contract, tokenId);
-    if (!nft) return null;
+const NftCard = ({ nft }: { nft: any }) => {
     return (
         <div className={styles.nftBox}>
             <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} />
             <h3>{nft.metadata.name}</h3>
-            <p>ID: {nft.metadata.id}</p> {/* SHOW ID ON SCREEN */}
+            <p style={{color: '#888', fontSize: '0.9rem'}}>ID: {nft.metadata.id}</p>
             <Web3Button
                 contractAddress={stakingContractAddress}
                 contractAbi={STAKING_POOL_ABI}
@@ -54,107 +52,130 @@ const StakedNftCard = ({ tokenId }: { tokenId: number }) => {
 
 const Stake: NextPage = () => {
     const address = useAddress();
+    
+    // Contracts
     const { contract: nftDropContract } = useContract(nftDropContractAddress);
     const { contract: tokenContract } = useContract(tokenContractAddress, "token");
     const { contract: stakingContract } = useContract(stakingContractAddress, STAKING_POOL_ABI);
+
+    // Reads
     const { data: tokenBalance, isLoading: tisLoading } = useTokenBalance(tokenContract, address);
     const { data: claimableRewards } = useContractRead(stakingContract, "calculateRewards", [address]);
     const { data: stakedTokens, isLoading: stisLoading } = useContractRead(stakingContract, "getStakedTokenIds", [address]);
 
-    const [ownedIds, setOwnedIds] = useState<number[]>([]);
+    // --- SMART SCANNER LOGIC (Fixes the "0 NFTs" bug for ERC721A) ---
+    const [ownedNfts, setOwnedNfts] = useState<any[]>([]);
     const [loadingNfts, setLoadingNfts] = useState(false);
-    
-    // --- SUPER DEBUGGER STATE ---
-    const [statusLog, setStatusLog] = useState<string>("Waiting...");
-    const [foundLog, setFoundLog] = useState<string>("");
 
     useEffect(() => {
-        if (!address || !nftDropContract) {
-            setStatusLog("Connecting to wallet/contract...");
-            return;
-        }
+        if (!address || !nftDropContract) return;
 
         const fetchNfts = async () => {
             setLoadingNfts(true);
-            setStatusLog("Step 1: Checking Balance...");
             try {
-                // 1. Check Balance
-                const balanceBN = await nftDropContract.call("balanceOf", [address]);
-                const balance = Number(balanceBN);
+                // We use the Thirdweb SDK's built-in fetcher
+                // This handles contracts that don't have the 'tokenOfOwnerByIndex' function
+                const nfts = await nftDropContract.erc721.getOwned(address);
                 
-                setStatusLog(`Step 2: Balance is ${balance}. Scanning IDs...`);
+                console.log("Found NFTs:", nfts); // Check F12 console to see them
 
-                const foundIds = [];
-                let logString = "";
-
-                // 2. Loop
-                for (let i = 0; i < balance; i++) {
-                    try {
-                        const tokenId = await nftDropContract.call("tokenOfOwnerByIndex", [address, i]);
-                        const idNum = Number(tokenId);
-                        
-                        logString += `[#${idNum}] `; // Add to log
-                        
-                        // Filter
-                        if (idNum >= minvalue && idNum <= maxval) {
-                            foundIds.push(idNum);
-                        }
-                    } catch (err) {
-                        console.error(err);
-                    }
-                }
+                const filtered = nfts.filter((nft) => {
+                    const id = Number(nft.metadata.id);
+                    return id >= minvalue && id <= maxval;
+                });
                 
-                setFoundLog(logString || "No IDs returned.");
-                if (balance > 0 && foundIds.length === 0) {
-                    setStatusLog(`Finished. Found ${balance} NFTs but IDs didn't match range (${minvalue}-${maxval}).`);
-                } else {
-                    setStatusLog(`Finished. Showing ${foundIds.length} NFTs.`);
-                }
-                
-                setOwnedIds(foundIds);
+                setOwnedNfts(filtered);
             } catch (error) {
-                setStatusLog("CRITICAL ERROR: Contract call failed. " + error);
+                console.error("Error scanning wallet:", error);
             }
             setLoadingNfts(false);
         };
 
         fetchNfts();
     }, [address, nftDropContract]);
+    // -----------------------------------------------------
 
     return (
-        <div className={styles.container}>
-            <div style={{display: 'flex', justifyContent: 'space-between'}}> <ConnectWallet /> </div>
-            <h1 className={styles.h1}>Stake Your {PAGE_NAME} NFTs</h1>
-            
-            {/* --- RED DEBUG BOX --- */}
-            <div style={{background: '#330000', border: '1px solid red', padding: '15px', marginBottom: '20px'}}>
-                <h3 style={{color: 'red', margin: 0}}>DEBUGGER REPORT:</h3>
-                <p style={{color: '#ffcccc', margin: '5px 0'}}><strong>Status:</strong> {statusLog}</p>
-                <p style={{color: '#ffcccc', margin: '5px 0'}}><strong>All IDs in Wallet:</strong> {foundLog}</p>
-                <p style={{color: '#888', fontSize: '12px'}}>Wallet Connected: {address}</p>
-                <p style={{color: '#888', fontSize: '12px'}}>Checking Contract: {nftDropContractAddress}</p>
-            </div>
-            {/* --------------------- */}
+        <div className={address ? "stake loadingstake" : "stake loadingstake"}>
+            <div className={!address ? "stakeaa loadingstakea" : ""}>
+                {!address ? (
+                    <div className="connect"> <ConnectWallet /> </div>
+                ) : (
+                    <div className={styles.container}>
+                        <div className=""> <ConnectWallet /> </div>
+                        <h1 className={styles.h1}>Stake Your {PAGE_NAME} NFTs</h1>
+                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
 
-            <h2 className={styles.h2}>Your Unstaked {PAGE_NAME} NFTs</h2>
-            <div className={styles.nftBoxGrid}>
-                {loadingNfts ? <p>Scanning wallet...</p> : (
-                    ownedIds.length > 0 ? ownedIds.map((id) => (
-                        <NftCard key={id} tokenId={id} />
-                    )) : <p>No {PAGE_NAME} NFTs found.</p>
+                        {/* --- TOKENS SECTION --- */}
+                        <h2 className={styles.h2}>Your Tokens</h2>
+                        <div className={styles.tokenGrid}>
+                            <div className={styles.tokenItem}>
+                                <h3 className={styles.tokenLabel}>Claimable Rewards</h3>
+                                <p className={styles.tokenValue}>
+                                    <b>{claimableRewards ? ethers.utils.formatUnits(claimableRewards, 18) : "0.0"}</b> {tokenBalance?.symbol}
+                                </p>
+                            </div>
+                            <div className={styles.tokenItem}>
+                                <h3 className={styles.tokenLabel}>Current Balance</h3>
+                                <p className={styles.tokenValue}>
+                                    <b>{tisLoading ? "Loading..." : tokenBalance?.displayValue}</b> {tokenBalance?.symbol}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style={{textAlign: 'center', marginTop: '20px'}}>
+                            <Web3Button
+                                contractAddress={stakingContractAddress}
+                                contractAbi={STAKING_POOL_ABI}
+                                action={(contract) => contract.call("claimReward")}
+                            >
+                                Claim Rewards
+                            </Web3Button>
+                        </div>
+
+                        {/* --- REFERRAL SECTION --- */}
+                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
+                        <h2 className={styles.h2}>Refer a Friend</h2>
+                        <div className={styles.tokenGrid}>
+                            <input type="text" placeholder="Friend's NFT ID" id="referral-id" />
+                            <Web3Button
+                                contractAddress={referralManagerAddress}
+                                contractAbi={REFERRAL_MANAGER_ABI}
+                                action={async (c) => {
+                                    const val = (document.getElementById("referral-id") as HTMLInputElement).value;
+                                    await c.call("register", [val]);
+                                }}
+                            >
+                                Register Referral
+                            </Web3Button>
+                        </div>
+
+                        {/* --- UNSTAKED NFTs (Smart Scanner) --- */}
+                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
+                        <h2 className={styles.h2}>Your Unstaked {PAGE_NAME} NFTs</h2>
+                        <div className={styles.nftBoxGrid}>
+                            {loadingNfts ? <p>Scanning wallet...</p> : (
+                                ownedNfts.length > 0 ? ownedNfts.map((nft) => (
+                                    <NftCard key={nft.metadata.id} nft={nft} />
+                                )) : <p>No {PAGE_NAME} NFTs found in wallet.</p>
+                            )}
+                        </div>
+
+                        {/* --- STAKED NFTs --- */}
+                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
+                        <h2 className={styles.h2}>Your Staked {PAGE_NAME} NFTs</h2>
+                        {stisLoading ? "Loading..." : (
+                            <div className={styles.nftBoxGrid}>
+                                {stakedTokens && stakedTokens.length > 0 ? 
+                                    stakedTokens.map((stakedToken: BigNumber) => (
+                                        <StakedNftCard key={stakedToken.toString()} tokenId={stakedToken.toNumber()} />
+                                    )) : <p>No NFTs staked.</p>
+                                }
+                            </div>
+                        )}
+                    </div>
                 )}
             </div>
-            
-            {/* Other sections... */}
-            <h2 className={styles.h2}>Your Staked {PAGE_NAME} NFTs</h2>
-             {stisLoading ? <p>Loading...</p> : (
-                <div className={styles.nftBoxGrid}>
-                {stakedTokens && stakedTokens.length > 0 ? 
-                stakedTokens.map((stakedToken: BigNumber) => (
-                    <StakedNftCard key={stakedToken.toString()} tokenId={stakedToken.toNumber()} />
-                )) : <p>No NFTs staked.</p>}
-                </div>
-            )}
         </div>
     );
 };
