@@ -20,32 +20,47 @@ const maxval = 1000000;
 // !!! 🔴 PASTE YOUR ALCHEMY API KEY HERE !!!
 const ALCHEMY_KEY = "Xx_szvkGT0KJ5CT7ZdoHY"; 
 
-// Updated NftCard with Type Safety
 const NftCard = ({ tokenId }: { tokenId: number }) => {
-    const { contract } = useContract(nftDropContractAddress);
-    const { data: nft } = useNFT(contract, tokenId);
+    const { contract: nftContract } = useContract(nftDropContractAddress);
+    const { contract: stakingContract } = useContract(stakingContractAddress, STAKING_POOL_ABI);
+    const { data: nft } = useNFT(nftContract, tokenId);
 
     if (!nft) return null;
+
+    const handleStake = async () => {
+        try {
+            console.log("Staking ID:", tokenId);
+            // DIRECT CALL: We manually format the array
+            await stakingContract?.call("stake", [[tokenId]]);
+            alert("Success! Transaction Submitted.");
+        } catch (err) {
+            console.error(err);
+            alert("Stake Failed. Check Console.");
+        }
+    };
 
     return (
         <div className={styles.nftBox}>
             <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} />
             <h3>{nft.metadata.name}</h3>
             <p style={{color:'#888', fontSize:'0.9rem'}}>ID: {nft.metadata.id}</p>
-            <Web3Button
-                contractAddress={stakingContractAddress}
-                contractAbi={STAKING_POOL_ABI}
-                // FIX: Force Number() conversion here
-                action={(contract) => {
-                    const id = Number(nft.metadata.id);
-                    console.log("Staking ID:", id); // Check console to confirm
-                    return contract.call("stake", [[id]]);
+            
+            {/* REPLACED Web3Button WITH STANDARD BUTTON FOR CONTROL */}
+            <button 
+                onClick={handleStake}
+                style={{
+                    backgroundColor: '#e94560', 
+                    color: 'white', 
+                    padding: '10px', 
+                    border: 'none', 
+                    borderRadius: '5px', 
+                    cursor: 'pointer',
+                    width: '100%',
+                    fontWeight: 'bold'
                 }}
-                onError={(error) => {
-                    console.error("Stake Failed:", error);
-                    alert("Stake Failed! Check Console for details.");
-                }}
-            >Stake</Web3Button>
+            >
+                Stake
+            </button>
         </div>
     );
 };
