@@ -13,8 +13,6 @@ const nftDropContractAddress = "0x106fb804D03D4EA95CaeFA45C3215b57D8E6835D";
 const stakingContractAddress = "0x76Ca881a2455441869fC35ec1B54997A8252F59C"; 
 const referralManagerAddress = "0xF6EeC70971B7769Db3a7F3daffCF8F00AfeF47b9";
 const tokenContractAddress = "0x64487539aa9d61Bdc652A5755bbe30Ee96cFcEb2";
-const minvalue = 1;
-const maxval = 1000000;
 
 // Helper Component for Staked NFT
 const StakedNftCard = ({ tokenId }: { tokenId: number }) => {
@@ -37,21 +35,58 @@ const StakedNftCard = ({ tokenId }: { tokenId: number }) => {
     );
 };
 
+// Helper to Preview NFT before staking
+const NftPreview = ({ tokenId }: { tokenId: string }) => {
+    const { contract } = useContract(nftDropContractAddress);
+    const { data: nft, isLoading } = useNFT(contract, tokenId);
+
+    if (!tokenId) return null;
+    if (isLoading) return <p>Loading Preview...</p>;
+    if (!nft) return <p>Invalid ID or NFT not found.</p>;
+
+    return (
+        <div style={{marginTop: '20px', border: '1px solid #333', padding: '20px', borderRadius: '10px', textAlign: 'center', background: '#111'}}>
+            <h3 style={{marginTop:0}}>Preview</h3>
+            <div style={{maxWidth: '200px', margin: '0 auto'}}>
+                 <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} />
+            </div>
+            <p><strong>{nft.metadata.name}</strong></p>
+        </div>
+    );
+};
+
 const Stake: NextPage = () => {
     const address = useAddress();
-    
-    // Contracts
     const { contract: nftDropContract } = useContract(nftDropContractAddress);
     const { contract: tokenContract } = useContract(tokenContractAddress, "token");
     const { contract: stakingContract } = useContract(stakingContractAddress, STAKING_POOL_ABI);
-
-    // Reads
     const { data: tokenBalance, isLoading: tisLoading } = useTokenBalance(tokenContract, address);
     const { data: claimableRewards } = useContractRead(stakingContract, "calculateRewards", [address]);
     const { data: stakedTokens, isLoading: stisLoading } = useContractRead(stakingContract, "getStakedTokenIds", [address]);
 
-    // State for Manual ID Input
     const [manualId, setManualId] = useState("");
+
+    // Function to handle APPROVE + STAKE
+    const handleStake = async () => {
+        if(!manualId) return alert("Please enter an ID");
+        
+        try {
+            // 1. Check Approval (Optional logic, but safer to just try staking directly first)
+            // If the stake fails, we catch the error and suggest approval.
+            await stakingContract?.call("stake", [[Number(manualId)]]);
+            alert("Success! NFT Staked.");
+            setManualId("");
+        } catch (err: any) {
+            console.error(err);
+            // If error contains "approved", tell user to approve
+            if(JSON.stringify(err).includes("approve") || JSON.stringify(err).includes("transfer caller is not owner nor approved")) {
+                alert("APPROVAL NEEDED: Please go to PolygonScan and 'SetApprovalForAll' for the Staking Contract.");
+                window.open(`https://polygonscan.com/address/${nftDropContractAddress}#writeContract`, '_blank');
+            } else {
+                alert("Error staking. Make sure you own this ID and it is unstaked.");
+            }
+        }
+    };
 
     return (
         <div className={address ? "stake loadingstake" : "stake loadingstake"}>
@@ -104,10 +139,10 @@ const Stake: NextPage = () => {
                             >Register Referral</Web3Button>
                         </div>
 
-                        {/* --- MANUAL ID STAKE (FIXED) --- */}
+                        {/* --- MANUAL ID STAKE WITH PREVIEW --- */}
                         <hr className={`${styles.divider} ${styles.spacerTop}`} />
                         <h2 className={styles.h2}>Stake by ID</h2>
-                        <p>Can't see your NFT above? Enter the ID manually to stake.</p>
+                        <p>Enter your NFT ID below to verify and stake it.</p>
                         <div className={styles.tokenGrid}>
                             <input 
                                 type="text" 
@@ -115,27 +150,11 @@ const Stake: NextPage = () => {
                                 value={manualId}
                                 onChange={(e) => setManualId(e.target.value)}
                             />
-                            <Web3Button
-                                contractAddress={stakingContractAddress}
-                                contractAbi={STAKING_POOL_ABI}
-                                action={async (contract) => {
-                                    if(!manualId) return alert("Please enter an ID");
-                                    console.log("Attempting to stake ID:", manualId);
-                                    
-                                    // 1. Approve (This might be needed first!)
-                                    try {
-                                        // We attempt to stake. If not approved, it might fail, 
-                                        // but usually the user should have approved the collection first.
-                                        await contract.call("stake", [[Number(manualId)]]);
-                                        alert("Transaction Submitted!");
-                                        setManualId(""); // Clear input
-                                    } catch (err) {
-                                        console.error("Staking Error:", err);
-                                        alert("Error: Check Console (F12). You might need to Approve the contract first.");
-                                    }
-                                }}
-                            >Stake This ID</Web3Button>
+                            <button onClick={handleStake}>Stake This ID</button>
                         </div>
+                        
+                        {/* SHOW PREVIEW OF THE GIF IF ID IS ENTERED */}
+                        {manualId && <NftPreview tokenId={manualId} />}
 
                         {/* --- STAKED NFTs --- */}
                         <hr className={`${styles.divider} ${styles.spacerTop}`} />
