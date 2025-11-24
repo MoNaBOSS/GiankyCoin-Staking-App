@@ -13,6 +13,8 @@ const nftDropContractAddress = "0x106fb804D03D4EA95CaeFA45C3215b57D8E6835D";
 const stakingContractAddress = "0x76Ca881a2455441869fC35ec1B54997A8252F59C"; 
 const referralManagerAddress = "0xF6EeC70971B7769Db3a7F3daffCF8F00AfeF47b9";
 const tokenContractAddress = "0x64487539aa9d61Bdc652A5755bbe30Ee96cFcEb2";
+const minvalue = 1;
+const maxval = 1000000;
 
 // Helper Component for Staked NFT
 const StakedNftCard = ({ tokenId }: { tokenId: number }) => {
@@ -47,6 +49,9 @@ const Stake: NextPage = () => {
     const { data: tokenBalance, isLoading: tisLoading } = useTokenBalance(tokenContract, address);
     const { data: claimableRewards } = useContractRead(stakingContract, "calculateRewards", [address]);
     const { data: stakedTokens, isLoading: stisLoading } = useContractRead(stakingContract, "getStakedTokenIds", [address]);
+
+    // State for Manual ID Input
+    const [manualId, setManualId] = useState("");
 
     return (
         <div className={address ? "stake loadingstake" : "stake loadingstake"}>
@@ -99,19 +104,35 @@ const Stake: NextPage = () => {
                             >Register Referral</Web3Button>
                         </div>
 
-                        {/* --- NEW: MANUAL ID STAKE --- */}
+                        {/* --- MANUAL ID STAKE (FIXED) --- */}
                         <hr className={`${styles.divider} ${styles.spacerTop}`} />
                         <h2 className={styles.h2}>Stake by ID</h2>
                         <p>Can't see your NFT above? Enter the ID manually to stake.</p>
                         <div className={styles.tokenGrid}>
-                            <input type="text" placeholder="Enter NFT ID (e.g. 28)" id="stake-id-input" />
+                            <input 
+                                type="text" 
+                                placeholder="Enter NFT ID (e.g. 28)" 
+                                value={manualId}
+                                onChange={(e) => setManualId(e.target.value)}
+                            />
                             <Web3Button
                                 contractAddress={stakingContractAddress}
                                 contractAbi={STAKING_POOL_ABI}
                                 action={async (contract) => {
-                                    const val = (document.getElementById("stake-id-input") as HTMLInputElement).value;
-                                    if(!val) return alert("Enter an ID");
-                                    await contract.call("stake", [[val]]);
+                                    if(!manualId) return alert("Please enter an ID");
+                                    console.log("Attempting to stake ID:", manualId);
+                                    
+                                    // 1. Approve (This might be needed first!)
+                                    try {
+                                        // We attempt to stake. If not approved, it might fail, 
+                                        // but usually the user should have approved the collection first.
+                                        await contract.call("stake", [[Number(manualId)]]);
+                                        alert("Transaction Submitted!");
+                                        setManualId(""); // Clear input
+                                    } catch (err) {
+                                        console.error("Staking Error:", err);
+                                        alert("Error: Check Console (F12). You might need to Approve the contract first.");
+                                    }
                                 }}
                             >Stake This ID</Web3Button>
                         </div>
