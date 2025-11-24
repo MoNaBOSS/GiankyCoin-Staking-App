@@ -20,10 +20,13 @@ const maxval = 1000000;
 // !!! 🔴 PASTE YOUR ALCHEMY API KEY HERE !!!
 const ALCHEMY_KEY = "Xx_szvkGT0KJ5CT7ZdoHY"; 
 
+// Updated NftCard with Type Safety
 const NftCard = ({ tokenId }: { tokenId: number }) => {
     const { contract } = useContract(nftDropContractAddress);
     const { data: nft } = useNFT(contract, tokenId);
+
     if (!nft) return null;
+
     return (
         <div className={styles.nftBox}>
             <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} />
@@ -32,7 +35,16 @@ const NftCard = ({ tokenId }: { tokenId: number }) => {
             <Web3Button
                 contractAddress={stakingContractAddress}
                 contractAbi={STAKING_POOL_ABI}
-                action={(contract) => contract.call("stake", [[nft.metadata.id]])}
+                // FIX: Force Number() conversion here
+                action={(contract) => {
+                    const id = Number(nft.metadata.id);
+                    console.log("Staking ID:", id); // Check console to confirm
+                    return contract.call("stake", [[id]]);
+                }}
+                onError={(error) => {
+                    console.error("Stake Failed:", error);
+                    alert("Stake Failed! Check Console for details.");
+                }}
             >Stake</Web3Button>
         </div>
     );
