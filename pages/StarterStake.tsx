@@ -8,7 +8,6 @@ import {
   useTokenBalance,
   Web3Button,
 } from "@thirdweb-dev/react";
-import { BigNumber, ethers } from "ethers";
 import type { NextPage } from "next";
 import { useEffect, useState, useMemo } from "react";
 import { STAKING_POOL_ABI, REFERRAL_MANAGER_ABI } from "../constants/abis";
@@ -21,7 +20,7 @@ import {
 import styles from "../styles/Home.module.css";
 import Nav from "../components/Nav";
 
-// --- ICONS (Inline SVG to avoid external dependency issues in preview) ---
+// --- ICONS (SVG Fallbacks for maximum environment compatibility) ---
 const LockIcon = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
 );
@@ -29,7 +28,7 @@ const UnlockIcon = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
 );
 const ZapIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
 );
 const ShieldIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
@@ -38,9 +37,9 @@ const WalletIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"></path><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"></path><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"></path></svg>
 );
 
-const PAGE_NAME = "Starter";
+const PAGE_NAME = "Standard";
 
-// --- SUB-COMPONENTS ---
+// --- SUB-COMPONENTS (Internalized to fix build flow) ---
 
 const LiveReward = ({ stake }: { stake: any }) => {
   const [reward, setReward] = useState("0.00");
@@ -48,10 +47,8 @@ const LiveReward = ({ stake }: { stake: any }) => {
   useEffect(() => {
     const update = () => {
       const now = Math.floor(Date.now() / 1000);
-      // Safe conversion
       const lastClaim = parseInt(stake.lastClaimTime.toString());
       const elapsed = now > lastClaim ? now - lastClaim : 0;
-      // Rate is in Wei (1e18), simplified calc for display
       const rate = parseInt(stake.rewardRate.toString()) / 1e18;
       setReward((elapsed * rate).toFixed(6));
     };
@@ -97,7 +94,7 @@ const UnlockTimer = ({ endTime }: { endTime: any }) => {
 
 // --- MAIN PAGE ---
 
-const StarterStake: NextPage = () => {
+const StandardStake: NextPage = () => {
   const address = useAddress();
   
   // Contracts
@@ -137,10 +134,10 @@ const StarterStake: NextPage = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
             <div>
               <h1 style={{ fontSize: '2.5rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px', margin: 0, textTransform: 'uppercase', fontStyle: 'italic', letterSpacing: '-1px' }}>
-                <span style={{ color: '#fbbf24' }}><ZapIcon /></span> {PAGE_NAME} STAKING
+                <span style={{ color: '#6366f1' }}><ZapIcon /></span> {PAGE_NAME} STAKING
               </h1>
               <p style={{ color: '#64748b', marginTop: '5px', fontSize: '0.8rem', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase' }}>
-                Fixed Yield Protocol V5 • Earn GIANKY
+                Premium Fixed Yield • Dynamic Protocol V5
               </p>
             </div>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -149,7 +146,7 @@ const StarterStake: NextPage = () => {
                    {address.slice(0,6)}...{address.slice(-4)}
                  </div>
                )}
-               <ConnectWallet theme="dark" className="!bg-indigo-600 !hover:bg-indigo-700 !text-white !font-bold !rounded-xl !shadow-lg" />
+               <ConnectWallet theme="dark" className="!bg-white !text-black !font-black !rounded-xl !shadow-lg" />
             </div>
           </div>
         </div>
@@ -170,12 +167,12 @@ const StarterStake: NextPage = () => {
                {tokenBalance?.displayValue.slice(0, 6)} <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'normal' }}>GIAN</span>
              </p>
           </div>
-          <div className={styles.tokenItem} style={{ borderBottom: '3px solid rgba(74, 222, 128, 0.3)' }}>
+          <div className={styles.tokenItem} style={{ borderBottom: '3px solid #6366f1' }}>
              <h3 className={styles.tokenLabel} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-               <ZapIcon /> CLAIMABLE
+               <ZapIcon /> CLAIMABLE YIELD
              </h3>
-             <p className={styles.tokenValue} style={{ color: '#4ade80' }}>
-               {totalPendingDisplay} <span style={{ fontSize: '0.8rem', color: '#14532d', fontWeight: 'normal' }}>GKY</span>
+             <p className={styles.tokenValue} style={{ color: '#818cf8' }}>
+               {totalPendingDisplay} <span style={{ fontSize: '0.8rem', color: '#4338ca', fontWeight: 'normal' }}>GKY</span>
              </p>
           </div>
         </div>
@@ -183,11 +180,11 @@ const StarterStake: NextPage = () => {
         {/* GLOBAL ACTIONS */}
         <div style={{ display: 'flex', gap: '20px', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '25px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap', marginBottom: '40px', backdropFilter: 'blur(10px)' }}>
            <div style={{ flex: 1, minWidth: '300px', display: 'flex', gap: '10px', flexDirection: 'column' }}>
-              <label style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold', color: '#6366f1', marginLeft: '5px' }}>Network Referral</label>
+              <label style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold', color: '#6366f1', marginLeft: '5px' }}>Network Referral Manager</label>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <input 
                   type="text" 
-                  placeholder="Referrer ID / Address" 
+                  placeholder="Friend's NFT ID or Address" 
                   value={refInput}
                   onChange={e => setRefInput(e.target.value)}
                   style={{ flex: 1, padding: '12px 20px', borderRadius: '14px', border: '1px solid #334155', background: '#0f172a', color: 'white', outline: 'none', fontWeight: 'bold', fontSize: '0.9rem' }}
@@ -211,9 +208,9 @@ const StarterStake: NextPage = () => {
                   return c.call("claimReward", [collections, ids]);
                 }}
                 isDisabled={stakedNFTs.length === 0}
-                className="!bg-green-600 !hover:bg-green-500 !text-white !w-full !py-4 !rounded-2xl !text-lg !font-black !uppercase !italic !shadow-lg"
+                className="!bg-indigo-600 !hover:bg-indigo-500 !text-white !w-full !py-4 !rounded-2xl !text-lg !font-black !uppercase !italic !shadow-lg"
              >
-               CLAIM ALL
+               CLAIM ALL YIELD
              </Web3Button>
            </div>
         </div>
@@ -223,16 +220,17 @@ const StarterStake: NextPage = () => {
           <WalletIcon /> Unstaked Assets <span style={{ fontSize: '0.8rem', background: '#312e81', color: '#c7d2fe', padding: '2px 8px', borderRadius: '10px', fontStyle: 'normal' }}>{walletNfts?.length || 0}</span>
         </h2>
         
-        {loadingNfts ? <p style={{ color: '#64748b', textAlign: 'center', padding: '40px', letterSpacing: '2px', fontWeight: 'bold', textTransform: 'uppercase' }}>Scanning Blockchain...</p> : 
+        {loadingNfts ? <p style={{ color: '#64748b', textAlign: 'center', padding: '40px', letterSpacing: '2px', fontWeight: 'bold', textTransform: 'uppercase' }}>Syncing Inventory...</p> : 
          walletNfts?.length === 0 ? (
           <div style={{ padding: '60px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '30px', border: '2px dashed #334155', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            No NFTs found in wallet
+            No Standard Tier NFTs detected
           </div>
         ) : (
           <div className={styles.nftBoxGrid}>
             {walletNfts?.map(nft => (
               <div key={nft.metadata.id} className={styles.nftBox} style={{ borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
-                <div style={{ height: '220px', overflow: 'hidden', position: 'relative', background: '#020617' }}>
+                <div style={{ height: '240px', overflow: 'hidden', position: 'relative', background: '#020617' }}>
+                   {/* GIF Support via ThirdwebNftMedia */}
                    <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                    <div style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(5px)', padding: '4px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold', fontFamily: 'monospace', color: '#818cf8', border: '1px solid rgba(255,255,255,0.1)' }}>
                       #{nft.metadata.id}
@@ -242,6 +240,7 @@ const StarterStake: NextPage = () => {
                   <h3 style={{ fontSize: '1.2rem', fontWeight: '900', marginBottom: '15px', fontStyle: 'italic', textTransform: 'uppercase' }}>{nft.metadata.name}</h3>
                   
                   <div style={{ marginBottom: '20px' }}>
+                    <label style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>Select Vault Term</label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                       {[0, 1, 2].map((idx) => (
                         <button
@@ -263,8 +262,8 @@ const StarterStake: NextPage = () => {
                         </button>
                       ))}
                     </div>
-                    <div style={{ textAlign: 'center', fontSize: '0.7rem', color: '#4ade80', marginTop: '10px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', background: 'rgba(74, 222, 128, 0.1)', padding: '5px', borderRadius: '8px' }}>
-                       +{(selectedPlan[nft.metadata.id] || 0) === 0 ? "10%" : (selectedPlan[nft.metadata.id] || 0) === 1 ? "12%" : "15%"} Monthly Yield
+                    <div style={{ textAlign: 'center', fontSize: '0.7rem', color: '#4ade80', marginTop: '10px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', background: 'rgba(74, 222, 128, 0.05)', padding: '6px', borderRadius: '8px', border: '1px solid rgba(74, 222, 128, 0.1)' }}>
+                       Est. Yield: {(selectedPlan[nft.metadata.id] || 0) === 0 ? "10%" : (selectedPlan[nft.metadata.id] || 0) === 1 ? "12%" : "15%"} Monthly
                     </div>
                   </div>
 
@@ -289,13 +288,13 @@ const StarterStake: NextPage = () => {
 
         {/* SECTION 2: STAKED */}
         <h2 style={{ fontSize: '1.5rem', fontWeight: '900', marginBottom: '25px', display: 'flex', alignItems: 'center', gap: '10px', textTransform: 'uppercase', fontStyle: 'italic', color: '#4ade80' }}>
-          <ShieldIcon /> Active Stakes <span style={{ fontSize: '0.8rem', background: '#14532d', color: '#86efac', padding: '2px 8px', borderRadius: '10px', fontStyle: 'normal' }}>{stakedNFTs.length}</span>
+          <ShieldIcon /> Active Standard Vaults <span style={{ fontSize: '0.8rem', background: '#14532d', color: '#86efac', padding: '2px 8px', borderRadius: '10px', fontStyle: 'normal' }}>{stakedNFTs.length}</span>
         </h2>
 
-        {loadingStakes ? <p style={{ color: '#64748b' }}>Loading...</p> : 
+        {loadingStakes ? <p style={{ color: '#64748b' }}>Accessing Vault...</p> : 
          stakedNFTs.length === 0 ? (
           <div style={{ padding: '60px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '30px', border: '2px dashed #334155', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            No NFTs currently staked
+            No assets currently earning yield
           </div>
         ) : (
            <div className={styles.nftBoxGrid}>
@@ -308,18 +307,18 @@ const StarterStake: NextPage = () => {
                  <div style={{ padding: '25px', paddingTop: '50px' }}>
                    <h3 style={{ fontSize: '1.5rem', fontWeight: '900', marginBottom: '5px', fontStyle: 'italic', textTransform: 'uppercase' }}>Token #{stake.tokenId.toString()}</h3>
                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '20px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                     {stake.planIndex.toString() === "0" ? "90 Day Plan" : stake.planIndex.toString() === "1" ? "180 Day Plan" : "365 Day Plan"}
+                     {stake.planIndex.toString() === "0" ? "90 Day Vault" : stake.planIndex.toString() === "1" ? "180 Day Vault" : "365 Day Vault"}
                    </div>
 
                    <div style={{ background: '#020617', borderRadius: '16px', padding: '15px', marginBottom: '20px', border: '1px solid #1e293b' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                        <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}>Yield</span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'monospace', fontSize: '1rem', color: '#4ade80', fontWeight: 'bold' }}>
-                           <LiveReward stake={stake} /> <span style={{ fontSize: '0.7rem', color: '#64748b' }}>GKY</span>
+                        <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}>Yield Earned</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'monospace', fontSize: '1.1rem', color: '#4ade80', fontWeight: 'bold' }}>
+                           <LiveReward stake={stake} /> <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'normal' }}>GKY</span>
                         </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}>Unlock</span>
+                        <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}>Vault Unlock</span>
                         <UnlockTimer endTime={stake.lockEndTime} />
                       </div>
                    </div>
@@ -334,7 +333,7 @@ const StarterStake: NextPage = () => {
                         : "!bg-red-600 !hover:bg-red-500 !text-white !shadow-lg"
                      }`}
                    >
-                     Unstake & Collect
+                     Unstake & Claim
                    </Web3Button>
                  </div>
                </div>
@@ -347,4 +346,4 @@ const StarterStake: NextPage = () => {
   );
 };
 
-export default StarterStake;
+export default StandardStake;
