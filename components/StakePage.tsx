@@ -1,218 +1,210 @@
+"use client";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   useAddress,
   useContract,
   useContractRead,
-  useTokenBalance,
-  ThirdwebNftMedia,
+  useNFTBalance,
   Web3Button,
+  ThirdwebNftMedia,
 } from "@thirdweb-dev/react";
-import { ethers } from "ethers";
+import { ethers, BigNumber } from "ethers";
 import { Alchemy, Network } from "alchemy-sdk";
-import styles from "../styles/Home.module.css";
-import Nav from "./Nav";
-import { STAKING_POOL_ABI } from "../constants/abis";
-import {
-  STAKING_CONTRACT_ADDRESS,
-  TOKEN_CONTRACT_ADDRESS,
-} from "../constants/config";
+import { Lock, Zap } from "lucide-react";
 
-type StakePageProps = {
-  pageName: string;
-  collectionAddress: string;
+import styles from "../styles/Home.module.css";
+import Nav from "../components/Nav";
+
+import { STAKING_POOL_ABI } from "../constants/abis";
+import { STAKING_POOL_ADDRESS, NFT_COLLECTIONS } from "../constants/config";
+
+/* ------------------ Alchemy Setup ------------------ */
+const alchemy = new Alchemy({
+  apiKey: process.env.NEXT_PUBLIC_ALCHEMY_KEY!,
+  network: Network.MATIC_MAINNET,
+});
+
+/* ------------------ Types ------------------ */
+type StakedNFT = {
+  collection: string;
+  tokenId: number;
+  startTime: number;
+  lockEndTime: number;
+  rewardRate: BigNumber;
 };
 
-export default function StakePage({ pageName, collectionAddress }: StakePageProps) {
+/* ------------------ Helpers ------------------ */
+const formatTime = (seconds: number) => {
+  if (seconds <= 0) return "READY";
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${d}d ${h}h ${m}m`;
+};
+
+/* ------------------ Component ------------------ */
+export default function StakePage() {
   const address = useAddress();
-  const { contract: stakingContract } = useContract(
-    STAKING_CONTRACT_ADDRESS,
+
+  const { contract } = useContract(
+    STAKING_POOL_ADDRESS,
     STAKING_POOL_ABI
   );
-  const { data: tokenBalance } = useTokenBalance(
-    TOKEN_CONTRACT_ADDRESS,
-    address
-  );
 
-  const [ownedNFTs, setOwnedNFTs] = useState<any[]>([]);
-  const [loadingNFTs, setLoadingNFTs] = useState(true);
-  const [blacklist, setBlacklist] = useState<Record<number, boolean>>({});
-  const [selectedPlan, setSelectedPlan] = useState<Record<number, number>>({});
-
-  /* ---------------- ALCHEMY SETUP ---------------- */
-  const alchemy = useMemo(
-    () =>
-      new Alchemy({
-        apiKey: process.env.NEXT_PUBLIC_ALCHEMY_API_KEY!,
-        network: Network.MATIC_MAINNET,
-      }),
-    []
-  );
-
-  /* ---------------- STAKED DATA ---------------- */
+  /* ------------------ Contract Reads ------------------ */
   const { data: userState } = useContractRead(
-    stakingContract,
+    contract,
     "getUserFullState",
     [address]
   );
 
-  const staked = useMemo(() => {
-    if (!userState) return [];
-    return userState[0];
-  }, [userState]);
+  const stakedNFTs: StakedNFT[] = userState?.stakes || [];
+  const blacklist: number[] = userState?.blacklistedIds || [];
 
-  const stakedTokenIds = useMemo(
-    () => staked.map((s: any) => s.tokenId.toNumber()),
-    [staked]
-  );
+  /* ------------------ Rewards (Live) ------------------ */
+  const [liveRewards, setLiveRewards] = useState<BigNumber>(BigNumber.from(0));
 
-  /* ---------------- FETCH WALLET NFTs (ALCHEMY) ---------------- */
+  useEffect(() => {
+    if (!stakedNFTs?.length) return;
+
+    const interval = setInterval(() => {
+      const now = Math.floor(Date.now() / 1000);
+      let total = BigNumber.from(0);
+
+      stakedNFTs.forEach((s) => {
+        const elapsed = now - s.startTime;
+        if (elapsed > 0) {
+          total = total.add(
+            s.rewardRate.mul(elapsed)
+          );
+        }
+      });
+
+      setLiveRewards(total);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [stakedNFTs]);
+
+  /* ------------------ Alchemy NFT Fetch ------------------ */
+  const [ownedNFTs, setOwnedNFTs] = useState<any[]>([]);
+  const [loadingNFTs, setLoadingNFTs] = useState(false);
+
   useEffect(() => {
     if (!address) return;
 
-    async function loadNFTs() {
-      setLoadingNFTs(true);
-      const res = await alchemy.nft.getNftsForOwner(address);
-      const filtered = res.ownedNfts.filter(
-        (nft) =>
-          nft.contract.address.toLowerCase() ===
-            collectionAddress.toLowerCase() &&
-          !stakedTokenIds.includes(Number(nft.tokenId))
-      );
-      setOwnedNFTs(filtered);
-      setLoadingNFTs(false);
-    }
+    setLoadingNFTs(true);
 
-    loadNFTs();
-  }, [address, collectionAddress, stakedTokenIds, alchemy]);
+    alchemy.nft
+      .getNftsForOwner(address, {
+        contractAddresses: NFT_COLLECTIONS,
+      })
+      .then((res) => {
+        setOwnedNFTs(res.ownedNfts);
+      })
+      .finally(() => setLoadingNFTs(false));
+  }, [address]);
 
-  /* ---------------- BLACKLIST CHECK ---------------- */
-  useEffect(() => {
-    async function checkBlacklist() {
-      if (!stakingContract) return;
-      const map: Record<number, boolean> = {};
-      for (const nft of ownedNFTs) {
-        const id = Number(nft.tokenId);
-        map[id] = await stakingContract.call("isBlacklisted", [
-          collectionAddress,
-          id,
-        ]);
-      }
-      setBlacklist(map);
-    }
-    checkBlacklist();
-  }, [ownedNFTs, stakingContract, collectionAddress]);
-
-  /* ---------------- LIVE REWARD ---------------- */
-  function LiveReward({ stake }: any) {
-    const [val, setVal] = useState("0.0");
-
-    useEffect(() => {
-      const i = setInterval(() => {
-        const now = Math.floor(Date.now() / 1000);
-        const earned =
-          (now - stake.lastClaimTime.toNumber()) *
-          Number(ethers.utils.formatUnits(stake.rewardRate, 18));
-        setVal(earned.toFixed(6));
-      }, 1000);
-      return () => clearInterval(i);
-    }, [stake]);
-
-    return <span>{val}</span>;
-  }
-
-  /* ---------------- UNLOCK TIMER ---------------- */
-  function UnlockTimer({ stake }: any) {
-    const [txt, setTxt] = useState("");
-
-    useEffect(() => {
-      const i = setInterval(() => {
-        const now = Math.floor(Date.now() / 1000);
-        const diff = stake.lockEndTime.toNumber() - now;
-        if (diff <= 0) return setTxt("READY");
-        const d = Math.floor(diff / 86400);
-        const h = Math.floor((diff % 86400) / 3600);
-        setTxt(`${d}d ${h}h`);
-      }, 1000);
-      return () => clearInterval(i);
-    }, [stake]);
-
-    return <span>{txt}</span>;
-  }
-
+  /* ------------------ Render ------------------ */
   return (
     <div className={styles.container}>
       <Nav />
-      <div className={styles.stakeContainer}>
-        <h1 className={styles.h1}>{pageName} Staking</h1>
 
-        {/* STATS */}
-        <div className={styles.tokenGrid}>
-          <div className={styles.tokenItem}>
-            <h3>Claimable Rewards</h3>
-            <p>{userState ? ethers.utils.formatUnits(userState[1], 18) : "0"} GKY</p>
-          </div>
-          <div className={styles.tokenItem}>
-            <h3>Wallet Balance</h3>
-            <p>{tokenBalance?.displayValue} {tokenBalance?.symbol}</p>
-          </div>
+      <h1 className={styles.title}>⚡ Alpha Kong Staking</h1>
+
+      {/* Stats */}
+      <div className={styles.statsGrid}>
+        <div className={styles.statCard}>
+          <span>Total Staked</span>
+          <b>{stakedNFTs.length} / 6</b>
         </div>
-
-        {/* UNSTAKED */}
-        <h2>Your Unstaked NFTs</h2>
-        <div className={styles.nftBoxGrid}>
-          {loadingNFTs ? "Loading..." : ownedNFTs.length === 0 ? "No NFTs" :
-            ownedNFTs.map((nft) => {
-              const id = Number(nft.tokenId);
-              return (
-                <div key={id} className={styles.nftBox}>
-                  <ThirdwebNftMedia metadata={nft.rawMetadata} />
-                  {blacklist[id] && <p className={styles.error}>Blacklisted</p>}
-                  <select
-                    onChange={(e) =>
-                      setSelectedPlan({ ...selectedPlan, [id]: Number(e.target.value) })
-                    }
-                  >
-                    <option value={0}>3 Months</option>
-                    <option value={1}>6 Months</option>
-                    <option value={2}>12 Months</option>
-                  </select>
-
-                  <Web3Button
-                    contractAddress={STAKING_CONTRACT_ADDRESS}
-                    contractAbi={STAKING_POOL_ABI}
-                    isDisabled={blacklist[id]}
-                    action={(c) =>
-                      c.call("stake", [[collectionAddress], [id], selectedPlan[id] ?? 0])
-                    }
-                  >
-                    Stake
-                  </Web3Button>
-                </div>
-              );
-            })}
+        <div className={styles.statCard}>
+          <span>Live Rewards</span>
+          <b>{ethers.utils.formatUnits(liveRewards, 18)} GKY</b>
         </div>
+      </div>
 
-        {/* STAKED */}
-        <h2>Your Staked NFTs</h2>
-        <div className={styles.nftBoxGrid}>
-          {staked.map((stake: any) => (
-            <div key={stake.tokenId.toString()} className={styles.nftBox}>
-              <p>Token #{stake.tokenId.toString()}</p>
-              <p>Earned: <LiveReward stake={stake} /> GKY</p>
-              <p>Unlock: <UnlockTimer stake={stake} /></p>
+      {/* Claim */}
+      <Web3Button
+        contractAddress={STAKING_POOL_ADDRESS}
+        contractAbi={STAKING_POOL_ABI}
+        action={(c) => c.call("claimReward")}
+        className={styles.claimBtn}
+      >
+        Claim Rewards
+      </Web3Button>
+
+      {/* Unstaked NFTs */}
+      <h2 className={styles.sectionTitle}>Your Wallet (Unstaked)</h2>
+
+      {loadingNFTs && <p>Scanning wallet...</p>}
+
+      <div className={styles.nftGrid}>
+        {ownedNFTs.map((nft) => {
+          const tokenId = Number(nft.tokenId);
+          const isBlacklisted = blacklist.includes(tokenId);
+
+          return (
+            <div key={tokenId} className={styles.nftCard}>
+              <ThirdwebNftMedia metadata={nft.rawMetadata} />
+
+              <h3>#{tokenId}</h3>
+
+              {isBlacklisted ? (
+                <span className={styles.blacklisted}>Blacklisted</span>
+              ) : (
+                <Web3Button
+                  contractAddress={STAKING_POOL_ADDRESS}
+                  contractAbi={STAKING_POOL_ABI}
+                  action={(c) =>
+                    c.call("stake", [
+                      [nft.contract.address],
+                      [tokenId],
+                      0, // planIndex
+                    ])
+                  }
+                >
+                  Stake
+                </Web3Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Staked NFTs */}
+      <h2 className={styles.sectionTitle}>Staked Assets</h2>
+
+      <div className={styles.nftGrid}>
+        {stakedNFTs.map((s, i) => {
+          const remaining = s.lockEndTime - Math.floor(Date.now() / 1000);
+
+          return (
+            <div key={i} className={styles.nftCard}>
+              <Lock size={18} />
+
+              <p>ID #{s.tokenId}</p>
+
+              <p className={styles.unlock}>
+                Unlock: {formatTime(remaining)}
+              </p>
 
               <Web3Button
-                contractAddress={STAKING_CONTRACT_ADDRESS}
+                contractAddress={STAKING_POOL_ADDRESS}
                 contractAbi={STAKING_POOL_ABI}
                 action={(c) =>
-                  c.call("unstake", [[collectionAddress], [stake.tokenId]])
+                  c.call("unstake", [
+                    [s.collection],
+                    [s.tokenId],
+                  ])
                 }
               >
-                Unstake
+                Unstake & Claim
               </Web3Button>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
     </div>
   );
