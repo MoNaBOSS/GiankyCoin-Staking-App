@@ -1,441 +1,336 @@
-// components/StakePage.tsx
-import React, { useEffect, useMemo, useState } from "react";
 import {
+  ConnectWallet,
+  ThirdwebNftMedia,
   useAddress,
   useContract,
   useContractRead,
-  useOwnedNFTs,
-  ThirdwebNftMedia,
+  useNFTs,
   useTokenBalance,
   Web3Button,
-  ConnectWallet,
 } from "@thirdweb-dev/react";
+import { Lock, Unlock, Zap, Shield, Wallet } from "lucide-react";
 import { ethers } from "ethers";
-import { Lock, Unlock, Zap, Shield, Wallet as WalletIcon } from "lucide-react";
+import type { NextPage } from "next";
+import { useEffect, useState, useMemo } from "react";
+import { STAKING_POOL_ABI, REFERRAL_MANAGER_ABI } from "../constants/abis";
+import { 
+  STAKING_CONTRACT_ADDRESS, 
+  NFT_DROP_ADDRESS, 
+  TOKEN_CONTRACT_ADDRESS, 
+  REFERRAL_MANAGER_ADDRESS 
+} from "../constants/config";
 import styles from "../styles/Home.module.css";
 import Nav from "../components/Nav";
-import { STAKING_POOL_ABI } from "../constants/abis";
-import {
-  STAKING_CONTRACT_ADDRESS,
-  TOKEN_CONTRACT_ADDRESS,
-  REFERRAL_MANAGER_ADDRESS,
-} from "../constants/config";
 
-/**
- * Master StakePage component
- *
- * Props:
- *  - pageName: display name for the vault (e.g. "Standard")
- *  - collectionAddress: NFT collection address for this page (string)
- *
- * This component:
- *  - fetches owned NFTs for collectionAddress using useOwnedNFTs
- *  - fetches staked state via getUserFullState() on the single staking contract
- *  - provides stake, claim, unstake, and referral functionality
- *  - renders GIFs/media via ThirdwebNftMedia
- *  - shows live rewards per stake (calculated locally every second)
- *  - shows unlock countdown for each stake
- *
- * Note: This file assumes your project has @thirdweb-dev/react hooks configured
- * and the constants paths above exist.
- */
+const PAGE_NAME = "Standard";
 
-type StakePageProps = {
-  pageName: string;
-  collectionAddress: string;
-};
-
-type StakeInfo = {
-  collection: string;
-  tokenId: ethers.BigNumber;
-  stakedAt: ethers.BigNumber;
-  lastClaimTime: ethers.BigNumber;
-  lockEndTime: ethers.BigNumber;
-  rewardRate: ethers.BigNumber; // tokens per second (scaled by 1e18)
-  planIndex: ethers.BigNumber;
-  owner: string;
-};
-
-function LiveReward({ stake }: { stake: StakeInfo }) {
-  // compute and update reward locally every second
-  const [value, setValue] = useState("0.000000");
+const LiveReward = ({ stake }: { stake: any }) => {
+  const [reward, setReward] = useState("0.00");
+  
   useEffect(() => {
-    if (!stake || !stake.lastClaimTime || !stake.rewardRate) {
-      setValue("0.000000");
-      return;
-    }
-    let mounted = true;
-    const calc = () => {
+    const update = () => {
       const now = Math.floor(Date.now() / 1000);
-      const last = stake.lastClaimTime.toNumber();
-      const elapsed = Math.max(0, now - last);
-      // rewardRate is tokens per second with 18 decimals
-      const rate = Number(ethers.utils.formatUnits(stake.rewardRate, 18));
-      const r = elapsed * rate;
-      if (mounted) setValue(r.toFixed(6));
+      const lastClaim = stake.lastClaimTime.toNumber();
+      const elapsed = now > lastClaim ? now - lastClaim : 0;
+      const rate = stake.rewardRate.toNumber() / 1e18;
+      setReward((elapsed * rate).toFixed(6));
     };
-    calc();
-    const id = setInterval(calc, 1000);
-    return () => {
-      mounted = false;
-      clearInterval(id);
-    };
+    const timer = setInterval(update, 1000);
+    update();
+    return () => clearInterval(timer);
   }, [stake]);
-  return <span className="font-mono">{value}</span>;
-}
+  
+  return <span>{reward}</span>;
+};
 
-function UnlockTimer({ lockEndTime }: { lockEndTime: ethers.BigNumber }) {
-  const [text, setText] = useState<string>("Loading...");
+const UnlockTimer = ({ endTime }: { endTime: any }) => {
+  const [timeLeft, setTimeLeft] = useState("");
+  const [isLocked, setIsLocked] = useState(true);
+
   useEffect(() => {
-    if (!lockEndTime) {
-      setText("N/A");
-      return;
-    }
-    let mounted = true;
     const tick = () => {
       const now = Math.floor(Date.now() / 1000);
-      const end = lockEndTime.toNumber();
+      const end = parseInt(endTime.toString());
       const diff = end - now;
       if (diff <= 0) {
-        if (mounted) setText("READY");
+        setTimeLeft("UNLOCKED");
+        setIsLocked(false);
         return;
       }
       const d = Math.floor(diff / 86400);
       const h = Math.floor((diff % 86400) / 3600);
       const m = Math.floor((diff % 3600) / 60);
-      const s = diff % 60;
-      if (mounted) setText(`${d}d ${h}h ${m}m ${s}s`);
+      const s = Math.floor(diff % 60);
+      setTimeLeft(`${d}d ${h}h ${m}m ${s}s`);
     };
     tick();
-    const id = setInterval(tick, 1000);
-    return () => {
-      mounted = false;
-      clearInterval(id);
-    };
-  }, [lockEndTime]);
-  const locked = text !== "READY";
-  return (
-    <div className="flex items-center gap-2">
-      {locked ? <Lock size={14} /> : <Unlock size={14} />}
-      <span className={`text-sm font-semibold ${locked ? "text-amber-400" : "text-emerald-400"}`}>{text}</span>
-    </div>
-  );
-}
-
-/** Simple NFT card for unstaked NFTs */
-function NftCard({
-  token,
-  collectionAddress,
-  stakingAddress,
-  stakingContract,
-  onStaked,
-  isBlacklisted,
-  planIndex,
-}: {
-  token: any;
-  collectionAddress: string;
-  stakingAddress: string;
-  stakingContract: any;
-  onStaked?: (tokenId: number) => void;
-  isBlacklisted?: boolean;
-  planIndex?: number;
-}) {
-  const address = useAddress();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [endTime]);
 
   return (
-    <div className={styles.nftBox} style={{ borderRadius: 16 }}>
-      <div style={{ height: 220, overflow: "hidden", borderRadius: 12 }}>
-        <ThirdwebNftMedia metadata={token.metadata} className={styles.nftMedia} />
-      </div>
-      <div style={{ padding: 14 }}>
-        <div className="flex justify-between items-center mb-2">
-          <div>
-            <div className="font-bold text-lg">{token.metadata.name || `#${token.metadata.id}`}</div>
-            <div className="text-xs text-gray-400">ID: {token.metadata.id}</div>
-          </div>
-          <div className="text-xs text-gray-500">Tier</div>
-        </div>
-
-        {isBlacklisted && (
-          <div className="bg-red-800 text-red-300 rounded-md px-3 py-2 mb-3 text-sm">
-            🚫 Blacklisted ID
-          </div>
-        )}
-
-        <div className="flex gap-3">
-          <Web3Button
-            contractAddress={stakingAddress}
-            contractAbi={STAKING_POOL_ABI}
-            onError={(e) => console.error("stake error", e)}
-            action={async (c) => {
-              // ensure approval first via the stakingContract wrapper isn't available for NFT collection here,
-              // but most NFT wrappers have setApprovalForAll. We'll call contract directly from thirdweb's "c".
-              // Approve via the NFT collection would normally be done on the front-end via the collection contract.
-              // Here we just call stake (assuming user already approved or the collection uses ERC721 approvals).
-              await c.call("stake", [[collectionAddress], [Number(token.metadata.id)], planIndex || 0]);
-              onStaked && onStaked(Number(token.metadata.id));
-            }}
-            className={`!w-full !py-3 !rounded-md ${isBlacklisted ? "!bg-slate-700 !text-slate-400 cursor-not-allowed" : "!bg-indigo-600 !text-white"}`}
-            isDisabled={!!isBlacklisted}
-          >
-            Stake
-          </Web3Button>
-        </div>
-      </div>
+    <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: isLocked ? '#f59e0b' : '#4ade80', display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'monospace' }}>
+      {isLocked ? <><Lock size={12} /> {timeLeft}</> : <><Unlock size={12} /> READY</>}
     </div>
   );
-}
+};
 
-/** Staked token card */
-function StakedNftCard({
-  stake,
-  stakingAddress,
-  collectionAddress,
-}: {
-  stake: StakeInfo;
-  stakingAddress: string;
-  collectionAddress: string;
-}) {
-  const tokenId = stake.tokenId.toNumber();
-  const [nftMeta, setNftMeta] = useState<any>(null);
-  const { contract: nftContract } = useContract(collectionAddress, "nft-collection");
+const StandardStake: NextPage = () => {
   const address = useAddress();
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        if (!nftContract) return;
-        const meta = await nftContract.get(Number(tokenId));
-        if (mounted) setNftMeta(meta);
-      } catch (e) {
-        // ignore, metadata might still be in stake data
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [nftContract, tokenId]);
-
-  return (
-    <div className={styles.nftBox} style={{ borderRadius: 16, position: "relative" }}>
-      <div style={{ position: "absolute", top: 12, right: 12 }}>
-        <div className="bg-emerald-900/20 px-3 py-1 rounded-md text-emerald-300 text-xs flex items-center gap-2">
-          <Zap size={14} /> EARNING
-        </div>
-      </div>
-
-      <div style={{ padding: 16 }}>
-        <div className="mb-3">
-          <div className="font-bold text-xl">#{tokenId}</div>
-          <div className="text-xs text-gray-400">Plan: {stake.planIndex.toNumber() === 0 ? "3 month" : stake.planIndex.toNumber() === 1 ? "6 month" : "12 month"}</div>
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <div className="text-xs text-gray-400 mb-2">Rewards</div>
-          <div className="flex items-center justify-between">
-            <div className="text-lg font-mono text-emerald-300"><LiveReward stake={stake} /></div>
-            <div style={{ textAlign: "right" }}>
-              <div className="text-xs text-gray-400">Unlock in</div>
-              <UnlockTimer lockEndTime={stake.lockEndTime} />
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 10 }}>
-          <Web3Button
-            contractAddress={STAKING_CONTRACT_ADDRESS}
-            contractAbi={STAKING_POOL_ABI}
-            action={(c) => c.call("unstake", [[collectionAddress], [tokenId]])}
-            className="!w-full !py-3 !rounded-md !bg-red-600 !text-white"
-          >
-            Unstake & Claim
-          </Web3Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function StakePage({ pageName, collectionAddress }: StakePageProps) {
-  const address = useAddress();
-  const { contract: stakingContract, isLoading: stakingLoading } = useContract(STAKING_CONTRACT_ADDRESS, STAKING_POOL_ABI);
-
-  // Owned NFTs for THIS COLLECTION and connected address
-  const { data: ownedNfts, isLoading: loadingOwnedNfts } = useOwnedNFTs(collectionAddress as any, address);
-  // token balance (reward token)
+  
+  // Contracts
+  const { contract: stakingContract } = useContract(STAKING_CONTRACT_ADDRESS, STAKING_POOL_ABI);
+  const { contract: nftContract } = useContract(NFT_DROP_ADDRESS, "nft-drop");
   const { contract: tokenContract } = useContract(TOKEN_CONTRACT_ADDRESS, "token");
-  const { data: tokenBalance } = useTokenBalance(TOKEN_CONTRACT_ADDRESS as any, address);
 
-  // getUserFullState(address) -> (StakeInfo[], totalPending)
-  const { data: userFullState, isLoading: loadingUserState } = useContractRead(
-    stakingContract,
-    "getUserFullState",
+  // Data Hooks
+  const { data: ownedNfts, isLoading: loadingNfts } = useNFTs(nftContract);
+  const { data: tokenBalance } = useTokenBalance(tokenContract, address);
+  
+  // V5 Optimized Fetch
+  const { data: userFullState, isLoading: loadingStakes } = useContractRead(
+    stakingContract, 
+    "getUserFullState", 
     [address]
   );
 
-  // isBlacklisted mapping read helper (collection, tokenId)
-  const [blacklistCache, setBlacklistCache] = useState<Record<string, boolean>>({});
-  useEffect(() => {
-    // prefetch blacklist for owned tokens
-    (async () => {
-      if (!stakingContract || !ownedNfts || ownedNfts.length === 0) return;
-      const newCache: Record<string, boolean> = { ...blacklistCache };
-      await Promise.all(
-        ownedNfts.map(async (nft: any) => {
-          try {
-            const tokenId = Number(nft.metadata.id);
-            const key = `${collectionAddress}-${tokenId}`;
-            if (newCache[key] === undefined) {
-              const result = await stakingContract.call("isBlacklisted", [collectionAddress, tokenId]);
-              newCache[key] = !!result;
-            }
-          } catch (e) {
-            // ignore
-          }
-        })
-      );
-      setBlacklistCache(newCache);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stakingContract, ownedNfts]);
+  // Extract Staked Array from Tuple
+  const stakedNFTs = useMemo(() => (userFullState ? userFullState[0] : []) as any[], [userFullState]);
+  
+  // Local State
+  const [selectedPlan, setSelectedPlan] = useState<{[id: string]: number}>({});
+  const [refInput, setRefInput] = useState("");
 
-  // parse staked stakes
-  const stakes: StakeInfo[] = useMemo(() => {
-    if (!userFullState || !userFullState[0]) return [];
-    return userFullState[0] as StakeInfo[];
-  }, [userFullState]);
+  const walletNfts = ownedNfts?.filter(nft => nft.owner === address);
 
-  // arrays for claim/unstake operations
-  const stakedCollections = useMemo(() => stakes.map((s) => s.collection), [stakes]);
-  const stakedTokenIds = useMemo(() => stakes.map((s) => s.tokenId.toNumber()), [stakes]);
-
-  // total pending (contract-side) - but we display local per-token too
-  const totalPending = useMemo(() => {
+  // Total Pending Helper (formatted to 4 decimals)
+  const totalPendingDisplay = useMemo(() => {
     if (!userFullState || !userFullState[1]) return "0.00";
-    try {
-      return Number(ethers.utils.formatUnits(userFullState[1], 18)).toFixed(6);
-    } catch {
-      return "0.00";
-    }
+    return Number(ethers.utils.formatUnits(userFullState[1], 18)).toFixed(4);
   }, [userFullState]);
-
-  // referral input state (controlled)
-  const [referralId, setReferralId] = useState("");
-
-  const isLoading = loadingOwnedNfts || loadingUserState || stakingLoading;
 
   return (
     <div className={styles.container}>
       <Nav />
-
       <div className={styles.stakeContainer}>
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-extrabold">{pageName} Staking</h1>
-            <p className="text-sm text-gray-400">Fixed yield protocol V5 - Earn GIANKY</p>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="text-sm text-gray-300 font-mono bg-slate-800 px-3 py-1 rounded">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : <ConnectWallet />}</div>
+        
+        {/* HEADER */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
+            <div>
+              <h1 style={{ fontSize: '2.5rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px', margin: 0, textTransform: 'uppercase', fontStyle: 'italic', letterSpacing: '-1px' }}>
+                <span style={{ color: '#6366f1' }}><Zap size={14} /></span> {PAGE_NAME} STAKING
+              </h1>
+              <p style={{ color: '#64748b', marginTop: '5px', fontSize: '0.8rem', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase' }}>
+                Premium Fixed Yield • Dynamic Protocol V5
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              {address && (
+                <div style={{ padding: '8px 16px', background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', fontSize: '0.8rem', fontFamily: 'monospace', color: '#94a3b8' }}>
+                  {address.slice(0,6)}...{address.slice(-4)}
+                </div>
+              )}
+              <ConnectWallet theme="dark" className="!bg-white !text-black !font-black !rounded-xl !shadow-lg" />
+            </div>
           </div>
         </div>
 
-        {/* Stats */}
+        {/* STATS HUD */}
         <div className={styles.tokenGrid}>
           <div className={styles.tokenItem}>
-            <h3 className={styles.tokenLabel}><Shield size={16} /> TOTAL STAKED</h3>
-            <p className={styles.tokenValue}>{stakes.length}</p>
+            <h3 className={styles.tokenLabel} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Shield size={20} /> TOTAL STAKED
+            </h3>
+            <p className={styles.tokenValue}>{stakedNFTs.length}</p>
           </div>
           <div className={styles.tokenItem}>
-            <h3 className={styles.tokenLabel}><WalletIcon size={16} /> GIAN BALANCE</h3>
-            <p className={styles.tokenValue}>{tokenBalance ? `${tokenBalance.displayValue} ${tokenBalance.symbol}` : "0.0"}</p>
+            <h3 className={styles.tokenLabel} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Wallet size={20} /> GIAN BALANCE
+            </h3>
+            <p className={styles.tokenValue}>
+              {tokenBalance?.displayValue.slice(0, 6)} <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'normal' }}>GIAN</span>
+            </p>
           </div>
-          <div className={styles.tokenItem}>
-            <h3 className={styles.tokenLabel}><Zap size={16} /> CLAIMABLE YIELD</h3>
-            <p className={styles.tokenValue}>{totalPending} GKY</p>
+          <div className={styles.tokenItem} style={{ borderBottom: '3px solid #6366f1' }}>
+            <h3 className={styles.tokenLabel} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Zap size={14} /> CLAIMABLE YIELD
+            </h3>
+            <p className={styles.tokenValue} style={{ color: '#818cf8' }}>
+              {totalPendingDisplay} <span style={{ fontSize: '0.8rem', color: '#4338ca', fontWeight: 'normal' }}>GKY</span>
+            </p>
           </div>
         </div>
 
-        {/* Referral + Claim All */}
-        <div className="my-6 bg-slate-900/40 p-4 rounded-lg border border-slate-800 flex gap-4 items-center">
-          <input
-            className="flex-1 bg-transparent border border-slate-800 px-4 py-2 rounded-md outline-none text-white"
-            placeholder="Friend's NFT ID or Address"
-            value={referralId}
-            onChange={(e) => setReferralId(e.target.value)}
-          />
-          <Web3Button
-            contractAddress={REFERRAL_MANAGER_ADDRESS}
-            contractAbi={[] as any} // you can put REFERRAL_MANAGER_ABI here if available
-            action={async (c) => {
-              // registered signature expects uint256 or address; pass what user typed
-              // ensure the contract ABI includes register function
-              await c.call("register", [referralId]);
-            }}
-            className="bg-pink-600 text-white px-4 py-2 rounded-md"
-          >
-            Register
-          </Web3Button>
-
-          <Web3Button
-            contractAddress={STAKING_CONTRACT_ADDRESS}
-            contractAbi={STAKING_POOL_ABI as any}
-            action={(c) => c.call("claimReward", [stakedCollections, stakedTokenIds])}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-md"
-            isDisabled={stakes.length === 0}
-          >
-            Claim All Yield
-          </Web3Button>
+        {/* GLOBAL ACTIONS */}
+        <div style={{ display: 'flex', gap: '20px', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '25px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap', marginBottom: '40px', backdropFilter: 'blur(10px)' }}>
+          <div style={{ flex: 1, minWidth: '300px', display: 'flex', gap: '10px', flexDirection: 'column' }}>
+            <label style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold', color: '#6366f1', marginLeft: '5px' }}>Network Referral Manager</label>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input 
+                type="text" 
+                placeholder="Friend's NFT ID or Address" 
+                value={refInput}
+                onChange={e => setRefInput(e.target.value)}
+                style={{ flex: 1, padding: '12px 20px', borderRadius: '14px', border: '1px solid #334155', background: '#0f172a', color: 'white', outline: 'none', fontWeight: 'bold', fontSize: '0.9rem' }}
+              />
+              <Web3Button
+                contractAddress={REFERRAL_MANAGER_ADDRESS}
+                contractAbi={REFERRAL_MANAGER_ABI}
+                action={c => c.call("register", [refInput])}
+                className="!bg-slate-800 !text-white !h-auto !py-3 !px-6 !rounded-xl !font-bold"
+              >REGISTER</Web3Button>
+            </div>
+          </div>
+          
+          <div style={{ width: '100%', maxWidth: '300px' }}>
+            <Web3Button
+               contractAddress={STAKING_CONTRACT_ADDRESS}
+               contractAbi={STAKING_POOL_ABI}
+               action={(c) => {
+                 const collections = stakedNFTs.map(s => s.collection);
+                 const ids = stakedNFTs.map(s => s.tokenId);
+                 return c.call("claimReward", [collections, ids]);
+               }}
+               isDisabled={stakedNFTs.length === 0}
+               className="!bg-indigo-600 !hover:bg-indigo-500 !text-white !w-full !py-4 !rounded-2xl !text-lg !font-black !uppercase !italic !shadow-lg"
+            >
+              CLAIM ALL YIELD
+            </Web3Button>
+          </div>
         </div>
 
-        {/* Unstaked Assets */}
-        <h2 className={styles.h2}>Your Unstaked {pageName} NFTs</h2>
-        <div className={styles.nftBoxGrid}>
-          {isLoading && <div className="text-gray-400">Scanning wallet...</div>}
-          {!isLoading && (!ownedNfts || ownedNfts.length === 0) && <div className="text-gray-500">No {pageName} NFTs found in wallet.</div>}
-          {!isLoading && ownedNfts && ownedNfts.length > 0 && (
-            <>
-              {ownedNfts.map((nft: any) => {
-                const id = Number(nft.metadata.id || nft.id);
-                const key = `${collectionAddress}-${id}`;
-                const black = !!blacklistCache[key];
-                return (
-                  <NftCard
-                    key={id}
-                    token={nft}
-                    collectionAddress={collectionAddress}
-                    stakingAddress={STAKING_CONTRACT_ADDRESS}
-                    stakingContract={stakingContract}
-                    isBlacklisted={black}
-                    planIndex={0}
-                    onStaked={() => {
-                      // optional: trigger a refresh by reading getUserFullState (thirdweb hook will auto revalidate)
+        {/* SECTION 1: WALLET */}
+        <h2 style={{ fontSize: '1.5rem', fontWeight: '900', marginBottom: '25px', display: 'flex', alignItems: 'center', gap: '10px', textTransform: 'uppercase', fontStyle: 'italic', color: '#818cf8' }}>
+          <Wallet size={20} /> Unstaked Assets <span style={{ fontSize: '0.8rem', background: '#312e81', color: '#c7d2fe', padding: '2px 8px', borderRadius: '10px', fontStyle: 'normal' }}>{walletNfts?.length || 0}</span>
+        </h2>
+        
+        {loadingNfts ? <p style={{ color: '#64748b', textAlign: 'center', padding: '40px', letterSpacing: '2px', fontWeight: 'bold', textTransform: 'uppercase' }}>Syncing Inventory...</p> : 
+         walletNfts?.length === 0 ? (
+          <div style={{ padding: '60px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '30px', border: '2px dashed #334155', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            No Standard Tier NFTs detected
+          </div>
+        ) : (
+          <div className={styles.nftBoxGrid}>
+            {walletNfts?.map(nft => (
+              <div key={nft.metadata.id} className={styles.nftBox} style={{ borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
+                <div style={{ height: '240px', overflow: 'hidden', position: 'relative', background: '#020617' }}>
+                   {/* GIF Support via ThirdwebNftMedia */}
+                   <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                   <div style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(5px)', padding: '4px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold', fontFamily: 'monospace', color: '#818cf8', border: '1px solid rgba(255,255,255,0.1)' }}>
+                     #{nft.metadata.id}
+                   </div>
+                </div>
+                <div style={{ padding: '20px' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '900', marginBottom: '15px', fontStyle: 'italic', textTransform: 'uppercase' }}>{nft.metadata.name}</h3>
+                  
+                  <div style={{ marginBottom: '20px' }}>
+                    <label style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>Select Vault Term</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                      {[0, 1, 2].map((idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setSelectedPlan(p => ({...p, [nft.metadata.id]: idx}))}
+                          style={{
+                            padding: '10px 0',
+                            borderRadius: '10px',
+                            border: (selectedPlan[nft.metadata.id] || 0) === idx ? '2px solid #6366f1' : '1px solid #334155',
+                            background: (selectedPlan[nft.metadata.id] || 0) === idx ? '#4f46e5' : 'transparent',
+                            color: (selectedPlan[nft.metadata.id] || 0) === idx ? 'white' : '#64748b',
+                            fontSize: '0.7rem',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          {idx === 0 ? "3 MO" : idx === 1 ? "6 MO" : "12 MO"}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ textAlign: 'center', fontSize: '0.7rem', color: '#4ade80', marginTop: '10px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', background: 'rgba(74, 222, 128, 0.05)', padding: '6px', borderRadius: '8px', border: '1px solid rgba(74, 222, 128, 0.1)' }}>
+                      Est. Yield: {(selectedPlan[nft.metadata.id] || 0) === 0 ? "10%" : (selectedPlan[nft.metadata.id] || 0) === 1 ? "12%" : "15%"} Monthly
+                    </div>
+                  </div>
+
+                  <Web3Button 
+                    contractAddress={STAKING_CONTRACT_ADDRESS}
+                    contractAbi={STAKING_POOL_ABI}
+                    action={async c => {
+                      const approved = await nftContract?.isApproved(address, STAKING_CONTRACT_ADDRESS);
+                      if (!approved) await nftContract?.setApprovalForAll(STAKING_CONTRACT_ADDRESS, true);
+                      await c.call("stake", [[NFT_DROP_ADDRESS], [nft.metadata.id], selectedPlan[nft.metadata.id] || 0]);
                     }}
-                  />
-                );
-              })}
-            </>
-          )}
-        </div>
+                    className="!w-full !bg-white !hover:bg-slate-200 !text-slate-950 !font-black !rounded-xl !py-4 !text-sm !uppercase !italic"
+                  >
+                    Approve & Stake
+                  </Web3Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* Staked */}
-        <h2 className={styles.h2}>Your Staked {pageName} NFTs</h2>
-        <div className={styles.nftBoxGrid}>
-          {isLoading && <div className="text-gray-400">Loading staked assets...</div>}
-          {!isLoading && stakes.length === 0 && <div className="text-gray-500">No NFTs staked.</div>}
-          {!isLoading && stakes.length > 0 && (
-            stakes.map((s: any) => {
-              // ensure s is StakeInfo typed
-              const stake: StakeInfo = s as StakeInfo;
-              return (
-                <StakedNftCard key={stake.tokenId.toString()} stake={stake} stakingAddress={STAKING_CONTRACT_ADDRESS} collectionAddress={collectionAddress} />
-              );
-            })
-          )}
-        </div>
+        <div style={{ height: '60px' }} />
+
+        {/* SECTION 2: STAKED */}
+        <h2 style={{ fontSize: '1.5rem', fontWeight: '900', marginBottom: '25px', display: 'flex', alignItems: 'center', gap: '10px', textTransform: 'uppercase', fontStyle: 'italic', color: '#4ade80' }}>
+          <Shield size={20} /> Active Standard Vaults <span style={{ fontSize: '0.8rem', background: '#14532d', color: '#86efac', padding: '2px 8px', borderRadius: '10px', fontStyle: 'normal' }}>{stakedNFTs.length}</span>
+        </h2>
+
+        {loadingStakes ? <p style={{ color: '#64748b' }}>Accessing Vault...</p> : 
+         stakedNFTs.length === 0 ? (
+          <div style={{ padding: '60px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '30px', border: '2px dashed #334155', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            No assets currently earning yield
+          </div>
+        ) : (
+           <div className={styles.nftBoxGrid}>
+             {stakedNFTs.map(stake => (
+               <div key={stake.tokenId.toString()} className={styles.nftBox} style={{ borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)', position: 'relative' }}>
+                 <div style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', border: '1px solid rgba(34, 197, 94, 0.3)', padding: '4px 10px', borderRadius: '8px', fontSize: '0.65rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '4px', zIndex: 10, backdropFilter: 'blur(5px)' }}>
+                   <Zap size={14} /> EARNING
+                 </div>
+                 
+                 <div style={{ padding: '25px', paddingTop: '50px' }}>
+                   <h3 style={{ fontSize: '1.5rem', fontWeight: '900', marginBottom: '5px', fontStyle: 'italic', textTransform: 'uppercase' }}>Token #{stake.tokenId.toString()}</h3>
+                   <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '20px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                     {stake.planIndex.toString() === "0" ? "90 Day Vault" : stake.planIndex.toString() === "1" ? "180 Day Vault" : "365 Day Vault"}
+                   </div>
+
+                   <div style={{ background: '#020617', borderRadius: '16px', padding: '15px', marginBottom: '20px', border: '1px solid #1e293b' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}>Yield Earned</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'monospace', fontSize: '1.1rem', color: '#4ade80', fontWeight: 'bold' }}>
+                           <LiveReward stake={stake} /> <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'normal' }}>GKY</span>
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}>Vault Unlock</span>
+                        <UnlockTimer endTime={stake.lockEndTime} />
+                      </div>
+                   </div>
+
+                   <Web3Button 
+                     contractAddress={STAKING_CONTRACT_ADDRESS}
+                     contractAbi={STAKING_POOL_ABI}
+                     action={c => c.call("unstake", [[NFT_DROP_ADDRESS], [stake.tokenId]])}
+                     isDisabled={Math.floor(Date.now()/1000) < parseInt(stake.lockEndTime.toString())}
+                     className={`!w-full !font-black !rounded-xl !py-4 !text-sm !uppercase !italic !transition-all ${
+                        Math.floor(Date.now()/1000) < parseInt(stake.lockEndTime.toString()) 
+                        ? "!bg-slate-800 !text-slate-600 !cursor-not-allowed" 
+                        : "!bg-red-600 !hover:bg-red-500 !text-white !shadow-lg"
+                     }`}
+                   >
+                     Unstake & Claim
+                   </Web3Button>
+                 </div>
+               </div>
+             ))}
+           </div>
+        )}
+
       </div>
     </div>
   );
-}
+};
+
+export default StandardStake;
