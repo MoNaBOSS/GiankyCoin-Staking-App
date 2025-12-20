@@ -1,289 +1,244 @@
 import {
-    ConnectWallet,
-    ThirdwebNftMedia,
-    useAddress,
-    useContract,
-    useContractRead,
-    useTokenBalance,
-    Web3Button,
-    useNFT,
+  ConnectWallet,
+  ThirdwebNftMedia,
+  useAddress,
+  useContract,
+  useContractRead,
+  useNFTs,
+  useTokenBalance,
+  Web3Button,
 } from "@thirdweb-dev/react";
 import { BigNumber, ethers } from "ethers";
 import type { NextPage } from "next";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { STAKING_POOL_ABI, REFERRAL_MANAGER_ABI } from "../constants/abis";
+import { 
+  STAKING_CONTRACT_ADDRESS, 
+  NFT_DROP_ADDRESS, 
+  TOKEN_CONTRACT_ADDRESS, 
+  REFERRAL_MANAGER_ADDRESS 
+} from "../constants/config";
 import styles from "../styles/Home.module.css";
+import Nav from "../components/Nav";
 
-// --- CONFIGURATION FOR STARTER POOL ---
-const PAGE_NAME = "Starter";
-const nftDropContractAddress = "0x106fb804D03D4EA95CaeFA45C3215b57D8E6835D";
-const stakingContractAddress = "0x76Ca881a2455441869fC35ec1B54997A8252F59C";
-const referralManagerAddress = "0xF6EeC70971B7769Db3a7F3daffCF8F00AfeF47b9";
-const tokenContractAddress = "0x64487539aa9d61Bdc652A5755bbe30Ee96cFcEb2";
-const minvalue = 1;
-const maxval = 1000000;
+const PAGE_NAME = "Starter"; 
 
-// YOUR ALCHEMY KEY (Pre-filled)
-const ALCHEMY_KEY = "Xx_szvkGT0KJ5CT7ZdoHY";
-// --------------------------------------
+interface StakeInfo {
+  tokenId: BigNumber;
+  stakedAt: BigNumber;
+  lastClaimTime: BigNumber;
+  lockEndTime: BigNumber;
+  rewardRate: BigNumber;
+  planIndex: BigNumber;
+}
 
-// --- COMPONENT: Unstaked NFT Card (Approve + Stake) ---
-const NftCard = ({ tokenId }: { tokenId: number }) => {
-    const { contract: nftContract } = useContract(nftDropContractAddress);
-    const { contract: stakingContract } = useContract(stakingContractAddress, STAKING_POOL_ABI);
-    const { data: nft } = useNFT(nftContract, tokenId);
+// --- HELPER COMPONENTS ---
 
-    if (!nft) return null;
-
-    // 1. Approve Function
-    const handleApprove = async () => {
-        try {
-            const confirm = window.confirm("Step 1: Approve the Staking Contract to move your items. Proceed?");
-            if (!confirm) return;
-            
-            // Call setApprovalForAll on the NFT contract
-            await nftContract?.call("setApprovalForAll", [stakingContractAddress, true]);
-            alert("✅ Approval Successful! Now click 'Stake'.");
-        } catch (err) {
-            console.error(err);
-            alert("Approval Failed. Check Console.");
-        }
+const Countdown = ({ targetDate }: { targetDate: number }) => {
+  const [timeLeft, setTimeLeft] = useState("");
+  useEffect(() => {
+    const tick = () => {
+      const now = Math.floor(Date.now() / 1000);
+      const diff = targetDate - now;
+      if (diff <= 0) {
+        setTimeLeft("UNLOCKED");
+        return;
+      }
+      const d = Math.floor(diff / 86400);
+      const h = Math.floor((diff % 86400) / 3600);
+      const m = Math.floor((diff % 3600) / 60);
+      const s = Math.floor(diff % 60);
+      setTimeLeft(`${d}d ${h}h ${m}m ${s}s`);
     };
-
-    // 2. Stake Function
-    const handleStake = async () => {
-        try {
-            // Direct call to ensure array format is correct: [[id]]
-            await stakingContract?.call("stake", [[tokenId]]);
-            alert("✅ Success! NFT Staked.");
-        } catch (err: any) {
-            console.error(err);
-            // If error mentions approval, remind them
-            if (JSON.stringify(err).includes("approved")) {
-                alert("⚠️ You must click '1. Approve' first!");
-            } else {
-                alert("Stake Failed. Check Console.");
-            }
-        }
-    };
-
-    return (
-        <div className={styles.nftBox}>
-            <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} />
-            <h3>{nft.metadata.name}</h3>
-            <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 15px 0' }}>ID: {nft.metadata.id}</p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {/* Step 1: Approve Button (Outlined Style) */}
-                <button
-                    onClick={handleApprove}
-                    style={{
-                        background: 'transparent',
-                        border: '1px solid #6a5acd',
-                        color: '#6a5acd',
-                        padding: '8px',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        fontWeight: 'bold'
-                    }}
-                >
-                    1. Approve Wallet
-                </button>
-
-                {/* Step 2: Stake Button (Solid Style) */}
-                <button
-                    onClick={handleStake}
-                    style={{
-                        background: '#6a5acd',
-                        border: 'none',
-                        color: 'white',
-                        padding: '10px',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        fontWeight: 'bold'
-                    }}
-                >
-                    2. Stake NFT
-                </button>
-            </div>
-        </div>
-    );
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [targetDate]);
+  
+  return <span style={{ color: timeLeft === "UNLOCKED" ? "#4caf50" : "#ff9800", fontWeight: "bold", fontFamily: 'monospace' }}>{timeLeft}</span>;
 };
 
-// --- COMPONENT: Staked NFT Card (Unstake) ---
-const StakedNftCard = ({ tokenId }: { tokenId: number }) => {
-    const { contract: nftContract } = useContract(nftDropContractAddress);
-    const { contract: stakingContract } = useContract(stakingContractAddress, STAKING_POOL_ABI);
-    const { data: nft } = useNFT(nftContract, tokenId);
-
-    if (!nft) return null;
-
-    const handleUnstake = async () => {
-        try {
-            await stakingContract?.call("unstake", [[tokenId]]);
-            alert("✅ Unstaked Successfully!");
-        } catch (err) {
-            console.error(err);
-            alert("Unstake Failed.");
-        }
+const LiveReward = ({ stake }: { stake: StakeInfo }) => {
+  const [reward, setReward] = useState("0.000000");
+  useEffect(() => {
+    const update = () => {
+      const now = Date.now() / 1000;
+      const elapsed = now - stake.lastClaimTime.toNumber();
+      const rate = parseFloat(ethers.utils.formatEther(stake.rewardRate));
+      setReward((elapsed * rate).toFixed(6));
     };
-
-    return (
-        <div className={styles.nftBox}>
-            <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} />
-            <h3>{nft.metadata.name}</h3>
-            <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 15px 0' }}>ID: {nft.metadata.id}</p>
-            
-            <button
-                onClick={handleUnstake}
-                style={{
-                    background: '#333',
-                    border: '1px solid #555',
-                    color: 'white',
-                    padding: '10px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    width: '100%'
-                }}
-            >
-                Unstake (Take)
-            </button>
-        </div>
-    );
+    const timer = setInterval(update, 100);
+    update();
+    return () => clearInterval(timer);
+  }, [stake]);
+  return <span>{reward}</span>;
 };
 
 // --- MAIN PAGE ---
-const Stake: NextPage = () => {
-    const address = useAddress();
 
-    // Contract Hooks
-    const { contract: tokenContract } = useContract(tokenContractAddress, "token");
-    const { contract: stakingContract } = useContract(stakingContractAddress, STAKING_POOL_ABI);
-    
-    // Data Hooks
-    const { data: tokenBalance, isLoading: tisLoading } = useTokenBalance(tokenContract, address);
-    const { data: claimableRewards } = useContractRead(stakingContract, "calculateRewards", [address]);
-    const { data: stakedTokens, isLoading: stisLoading } = useContractRead(stakingContract, "getStakedTokenIds", [address]);
+const StarterStake: NextPage = () => {
+  const address = useAddress();
+  
+  // Hooks
+  const { contract: stakingContract } = useContract(STAKING_CONTRACT_ADDRESS, STAKING_POOL_ABI);
+  const { contract: nftContract } = useContract(NFT_DROP_ADDRESS, "nft-drop");
+  const { contract: tokenContract } = useContract(TOKEN_CONTRACT_ADDRESS, "token");
 
-    // Scanner State
-    const [ownedIds, setOwnedIds] = useState<number[]>([]);
-    const [loadingNfts, setLoadingNfts] = useState(false);
+  const { data: ownedNfts, isLoading: loadingNfts } = useNFTs(nftContract);
+  const { data: tokenBalance } = useTokenBalance(tokenContract, address);
+  
+  // V5 Optimized Fetch
+  const { data: userFullState, isLoading: loadingStakes } = useContractRead(stakingContract, "getUserFullState", [address]);
 
-    // Alchemy Automated Scanner
-    useEffect(() => {
-        if (!address) return;
+  const stakedNFTs = useMemo(() => (userFullState ? userFullState[0] : []) as StakeInfo[], [userFullState]);
+  const [selectedPlan, setSelectedPlan] = useState<{[id: string]: number}>({});
+  const [referralId, setReferralId] = useState("");
 
-        const fetchNftsFromAlchemy = async () => {
-            setLoadingNfts(true);
-            try {
-                const baseURL = `https://polygon-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}/getNFTs/`;
-                const url = `${baseURL}?owner=${address}&contractAddresses[]=${nftDropContractAddress}&withMetadata=false`;
+  const displayNfts = ownedNfts?.filter(nft => nft.owner === address); 
 
-                const response = await fetch(url);
-                const data = await response.json();
-
-                if (data.ownedNfts) {
-                    const validIds = data.ownedNfts
-                        .map((nft: any) => parseInt(nft.id.tokenId, 16))
-                        .filter((id: number) => id >= minvalue && id <= maxval);
-
-                    setOwnedIds(validIds);
-                }
-            } catch (error) {
-                console.error("Alchemy Scan Failed:", error);
-            }
-            setLoadingNfts(false);
-        };
-
-        fetchNftsFromAlchemy();
-    }, [address]);
-
-    return (
-        <div className={address ? "stake loadingstake" : "stake loadingstake"}>
-            <div className={!address ? "stakeaa loadingstakea" : ""}>
-                {!address ? (
-                    <div className="connect"> <ConnectWallet /> </div>
-                ) : (
-                    <div className={styles.container}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                            <ConnectWallet />
-                        </div>
-                        
-                        <h1 className={styles.h1}>Stake Your {PAGE_NAME} NFTs</h1>
-                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
-
-                        {/* REWARDS SECTION */}
-                        <h2 className={styles.h2}>Your Tokens</h2>
-                        <div className={styles.tokenGrid}>
-                            <div className={styles.tokenItem}>
-                                <h3 className={styles.tokenLabel}>Claimable Rewards</h3>
-                                <p className={styles.tokenValue}>
-                                    <b>{claimableRewards ? ethers.utils.formatUnits(claimableRewards, 18) : "0.0"}</b> GKY
-                                </p>
-                            </div>
-                            <div className={styles.tokenItem}>
-                                <h3 className={styles.tokenLabel}>Current Balance</h3>
-                                <p className={styles.tokenValue}>
-                                    <b>{tisLoading ? "..." : tokenBalance?.displayValue}</b> {tokenBalance?.symbol}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div style={{ textAlign: 'center', marginTop: '20px' }}>
-                            <Web3Button
-                                contractAddress={stakingContractAddress}
-                                contractAbi={STAKING_POOL_ABI}
-                                action={(contract) => contract.call("claimReward")}
-                            >
-                                Claim Rewards
-                            </Web3Button>
-                        </div>
-
-                        {/* REFERRAL SECTION */}
-                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
-                        <h2 className={styles.h2}>Refer a Friend</h2>
-                        <div className={styles.tokenGrid}>
-                            <input type="text" placeholder="Friend's NFT ID" id="referral-id" />
-                            <Web3Button
-                                contractAddress={referralManagerAddress}
-                                contractAbi={REFERRAL_MANAGER_ABI}
-                                action={async (c) => {
-                                    const val = (document.getElementById("referral-id") as HTMLInputElement).value;
-                                    await c.call("register", [val]);
-                                }}
-                            >
-                                Register Referral
-                            </Web3Button>
-                        </div>
-
-                        {/* UNSTAKED SECTION (Alchemy Powered) */}
-                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
-                        <h2 className={styles.h2}>Your Unstaked {PAGE_NAME} NFTs</h2>
-                        <div className={styles.nftBoxGrid}>
-                            {loadingNfts ? <p>Scanning wallet...</p> : (
-                                ownedIds.length > 0 ? ownedIds.map((id) => (
-                                    <NftCard key={id} tokenId={id} />
-                                )) : <p>No {PAGE_NAME} NFTs found in wallet.</p>
-                            )}
-                        </div>
-
-                        {/* STAKED SECTION */}
-                        <hr className={`${styles.divider} ${styles.spacerTop}`} />
-                        <h2 className={styles.h2}>Your Staked {PAGE_NAME} NFTs</h2>
-                        {stisLoading ? <p>Loading...</p> : (
-                            <div className={styles.nftBoxGrid}>
-                                {stakedTokens && stakedTokens.length > 0 ?
-                                    stakedTokens.map((stakedToken: BigNumber) => (
-                                        <StakedNftCard key={stakedToken.toString()} tokenId={stakedToken.toNumber()} />
-                                    )) : <p>No NFTs staked.</p>
-                                }
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
+  return (
+    <div className={styles.container}>
+      <Nav />
+      <div className={styles.stakeContainer}>
+        <div className={styles.header}>
+          <h1 className={styles.title}>{PAGE_NAME} Staking</h1>
+          <ConnectWallet theme="dark" />
         </div>
-    );
+
+        <hr className={styles.divider} />
+
+        <div className={styles.tokenGrid}>
+          <div className={styles.tokenItem}>
+            <h3 className={styles.tokenLabel}>Staked Count</h3>
+            <p className={styles.tokenValue}>{stakedNFTs.length}</p>
+          </div>
+          <div className={styles.tokenItem}>
+            <h3 className={styles.tokenLabel}>Wallet Balance</h3>
+            <p className={styles.tokenValue}>
+              {tokenBalance?.displayValue.slice(0, 6)} {tokenBalance?.symbol}
+            </p>
+          </div>
+        </div>
+
+        <div style={{ textAlign: "center", margin: "20px 0" }}>
+           <Web3Button
+              contractAddress={STAKING_CONTRACT_ADDRESS}
+              contractAbi={STAKING_POOL_ABI}
+              action={(c) => c.call("claimReward", [stakedNFTs.map(s => s.tokenId)])}
+              isDisabled={stakedNFTs.length === 0}
+              className={styles.claimBtn}
+           >
+             Claim All Rewards
+           </Web3Button>
+        </div>
+
+        <hr className={styles.divider} />
+
+        <div className={styles.referralSection} style={{padding: '20px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px'}}>
+           <h3>Referral Program</h3>
+           <div style={{display:'flex', gap:'10px', marginTop:'10px'}}>
+             <input 
+               type="text" 
+               placeholder="Referrer Address" 
+               value={referralId}
+               onChange={(e) => setReferralId(e.target.value)}
+               style={{padding:'10px', borderRadius:'5px', border:'none', flex:1, background: '#222', color: 'white'}}
+             />
+             <Web3Button
+               contractAddress={REFERRAL_MANAGER_ADDRESS}
+               contractAbi={REFERRAL_MANAGER_ABI}
+               action={(c) => c.call("register", [referralId])}
+             >
+               Register
+             </Web3Button>
+           </div>
+        </div>
+
+        <hr className={styles.divider} />
+
+        <h2>Your Unstaked NFTs</h2>
+        <div className={styles.nftBoxGrid}>
+          {loadingNfts ? <p>Loading...</p> : 
+           !address ? <p>Connect Wallet</p> :
+           displayNfts?.length === 0 ? <p>No NFTs found.</p> :
+           displayNfts?.map((nft) => (
+             <div key={nft.metadata.id} className={styles.nftBox}>
+               <ThirdwebNftMedia metadata={nft.metadata} className={styles.nftMedia} />
+               <h3>{nft.metadata.name}</h3>
+               
+               <div style={{margin: '10px 0'}}>
+                 <label style={{fontSize:'12px', color:'#aaa'}}>Select Plan:</label>
+                 <select 
+                   style={{width:'100%', padding:'8px', marginTop:'5px', background:'#222', color:'#fff', border:'1px solid #444', borderRadius:'5px'}}
+                   onChange={(e) => setSelectedPlan({...selectedPlan, [nft.metadata.id]: parseInt(e.target.value)})}
+                   value={selectedPlan[nft.metadata.id] || 0}
+                 >
+                   <option value={0}>3 Months (10%)</option>
+                   <option value={1}>6 Months (12%)</option>
+                   <option value={2}>12 Months (15%)</option>
+                 </select>
+               </div>
+
+               <Web3Button
+                 contractAddress={STAKING_CONTRACT_ADDRESS}
+                 contractAbi={STAKING_POOL_ABI}
+                 action={async (contract) => {
+                   const isApproved = await nftContract?.isApproved(address, STAKING_CONTRACT_ADDRESS);
+                   if (!isApproved) await nftContract?.setApprovalForAll(STAKING_CONTRACT_ADDRESS, true);
+                   await contract.call("stake", [[nft.metadata.id], selectedPlan[nft.metadata.id] || 0]);
+                 }}
+               >
+                 Stake NFT
+               </Web3Button>
+             </div>
+           ))
+          }
+        </div>
+
+        <hr className={styles.divider} />
+
+        <h2>Your Staked NFTs</h2>
+        <div className={styles.nftBoxGrid}>
+           {loadingStakes ? <p>Loading...</p> :
+            stakedNFTs.length === 0 ? <p>No staked NFTs.</p> :
+            stakedNFTs.map((stake) => (
+              <div key={stake.tokenId.toString()} className={styles.nftBox} style={{borderColor: '#4caf50'}}>
+                <div style={{position:'absolute', top:10, right:10, background:'rgba(76, 175, 80, 0.2)', color: '#4caf50', padding:'2px 8px', borderRadius:'4px', fontSize:'10px', fontWeight: 'bold', border: '1px solid #4caf50'}}>STAKED</div>
+                
+                {/* Visual Placeholder for Staked Item */}
+                <div style={{height: '180px', background: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', marginBottom: '10px'}}>
+                   <span style={{fontSize: '40px'}}>🦍</span>
+                </div>
+
+                <h3>Token #{stake.tokenId.toString()}</h3>
+                
+                <div style={{background: 'rgba(0,0,0,0.3)', padding:'10px', borderRadius:'5px', margin:'10px 0'}}>
+                   <div style={{display:'flex', justifyContent:'space-between', fontSize:'12px'}}>
+                      <span style={{color: '#aaa'}}>Pending:</span>
+                      <span style={{color:'#4caf50', fontWeight:'bold'}}><LiveReward stake={stake} /></span>
+                   </div>
+                   <div style={{display:'flex', justifyContent:'space-between', fontSize:'12px', marginTop:'5px'}}>
+                      <span style={{color: '#aaa'}}>Unlock:</span>
+                      <Countdown targetDate={stake.lockEndTime.toNumber()} />
+                   </div>
+                </div>
+
+                <Web3Button
+                  contractAddress={STAKING_CONTRACT_ADDRESS}
+                  contractAbi={STAKING_POOL_ABI}
+                  action={(c) => c.call("unstake", [[stake.tokenId]])}
+                  isDisabled={Date.now() / 1000 < stake.lockEndTime.toNumber()}
+                  style={{opacity: Date.now() / 1000 < stake.lockEndTime.toNumber() ? 0.5 : 1}}
+                >
+                  Unstake & Claim
+                </Web3Button>
+              </div>
+            ))
+           }
+        </div>
+      </div>
+    </div>
+  );
 };
 
-export default Stake;
+export default StarterStake;

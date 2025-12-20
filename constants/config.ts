@@ -1,0 +1,6 @@
+export const STAKING_CONTRACT_ADDRESS = "0x0901d6c6c2a7e42cfe9319f7d76d073499d402ab"; 
+
+// Update these to match your specific production addresses
+export const NFT_DROP_ADDRESS = "0x106fb804D03D4EA95CaeFA45C3215b57D8E6835D";
+export const TOKEN_CONTRACT_ADDRESS = "0x64487539aa9d61Bdc652A5755bbe30Ee96cFcEb2";
+export const REFERRAL_MANAGER_ADDRESS = "0xF6EeC70971B7769Db3a7F3daffCF8F00AfeF47b9";
